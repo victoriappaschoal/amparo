@@ -1,0 +1,187 @@
+import enum
+import uuid
+from datetime import datetime, date
+
+from sqlalchemy import (
+    Column, String, Integer, Float, Boolean, Date, DateTime,
+    ForeignKey, Enum, Text, UniqueConstraint
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+
+from app.database import Base
+from app.encrypted_types import EncryptedString, EncryptedJSON
+
+
+def gen_uuid():
+    return str(uuid.uuid4())
+
+
+class UserRole(str, enum.Enum):
+    patient = "patient"
+    doctor = "doctor"
+    admin = "admin"
+
+
+class ProfessionalType(str, enum.Enum):
+    """Tela 'Cadastro profissional' permite Médico ou Psicólogo."""
+    medico = "medico"
+    psicologo = "psicologo"
+
+
+class DeliveryType(str, enum.Enum):
+    """Tela 'Cadastro de paciente' -> campo 'Tipo de parto'."""
+    normal = "normal"
+    cesarea = "cesarea"
+    forceps = "forceps"
+
+
+class User(Base):
+    """
+    Conta de login. Guarda só o essencial de autenticação.
+    Dados de perfil ficam em PatientProfile / DoctorProfile,
+    ligados 1-para-1, para separar claramente o que é "identidade"
+    do que é "dado de saúde".
+    """
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    email = Column(String, unique=True, index=True, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+    full_name = Column(String, nullable=False)
+    role = Column(Enum(UserRole), nullable=False, default=UserRole.patient)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient_profile = relationship("PatientProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    doctor_profile = relationship("DoctorProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+
+class PatientProfile(Base):
+    __tablename__ = "patient_profiles"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), unique=True, nullable=False)
+    # Vínculo é feito depois por admin/recepção (não no cadastro) -> sempre nullable.
+    doctor_id = Column(UUID(as_uuid=False), ForeignKey("doctor_profiles.id"), nullable=True)
+
+    birth_date = Column(Date, nullable=True)
+    baby_birth_date = Column(Date, nullable=True)
+    delivery_type = Column(Enum(DeliveryType), nullable=True)
+    baby_name = Column(String, nullable=True)
+    is_breastfeeding = Column(Boolean, nullable=True)
+    phone = Column(String, nullable=True)
+
+    user = relationship("User", back_populates="patient_profile")
+    doctor = relationship("DoctorProfile", back_populates="patients")
+
+    mood_entries = relationship("MoodEntry", back_populates="patient", cascade="all, delete-orphan")
+    symptom_entries = relationship("SymptomDiaryEntry", back_populates="patient", cascade="all, delete-orphan")
+    epds_responses = relationship("EPDSResponse", back_populates="patient", cascade="all, delete-orphan")
+    consultations = relationship("Consultation", back_populates="patient", cascade="all, delete-orphan")
+
+
+class DoctorProfile(Base):
+    __tablename__ = "doctor_profiles"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    user_id = Column(UUID(as_uuid=False), ForeignKey("users.id"), unique=True, nullable=False)
+
+    professional_type = Column(Enum(ProfessionalType), nullable=False)
+    registration_number = Column(String, nullable=False)  # CRM (médico) ou CRP (psicólogo)
+    registration_state = Column(String, nullable=False)  # UF do registro
+    specialty = Column(String, nullable=True)  # especialidade médica / área de atuação
+    offers_teleconsultation = Column(Boolean, default=False)
+    phone = Column(String, nullable=True)
+    professional_bio = Column(Text, nullable=True)  # descrição profissional
+    is_verified = Column(Boolean, default=False)  # admin valida o registro antes de liberar acesso a pacientes
+
+    user = relationship("User", back_populates="doctor_profile")
+    patients = relationship("PatientProfile", back_populates="doctor")
+
+
+class MoodEntry(Base):
+    """
+    Check-in diário de humor exibido no calendário da aba inicial.
+    Um registro por paciente por dia.
+    """
+    __tablename__ = "mood_entries"
+    __table_args__ = (UniqueConstraint("patient_id", "entry_date", name="uq_mood_patient_date"),)
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    patient_id = Column(UUID(as_uuid=False), ForeignKey("patient_profiles.id"), nullable=False)
+    entry_date = Column(Date, nullable=False, default=date.today)
+    mood_scale = Column(Integer, nullable=False)  # ex: 1 (muito mal) a 5 (muito bem)
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("PatientProfile", back_populates="mood_entries")
+
+
+class SymptomDiaryEntry(Base):
+    """
+    Diário de sintomas. As respostas (ex.: {"dor_abdominal": 3, "dor_nas_costas": 1})
+    ficam num JSON de escala 0-5 por sintoma, mais um campo livre de observações.
+    """
+    __tablename__ = "symptom_diary_entries"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    patient_id = Column(UUID(as_uuid=False), ForeignKey("patient_profiles.id"), nullable=False)
+    entry_date = Column(Date, nullable=False, default=date.today)
+    answers = Column(EncryptedJSON, nullable=False)  # {"dor_abdominal": 0-5, ...}
+    observations = Column(EncryptedString, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("PatientProfile", back_populates="symptom_entries")
+
+
+class EPDSResponse(Base):
+    """
+    Escala de Depressão Pós-natal de Edimburgo (10 perguntas, 0-3 cada).
+    REGRA DE NEGÓCIO CRÍTICA: a pontuação (score) e a interpretação de risco
+    NUNCA são retornadas para o usuário paciente pela API — apenas para o
+    médico responsável. Ver app/routers/emotional_health.py.
+    """
+    __tablename__ = "epds_responses"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    patient_id = Column(UUID(as_uuid=False), ForeignKey("patient_profiles.id"), nullable=False)
+    entry_date = Column(Date, nullable=False, default=date.today)
+    answers = Column(EncryptedJSON, nullable=False)  # lista com as 10 respostas (0-3)
+    score = Column(Integer, nullable=False)
+    risk_level = Column(String, nullable=False)  # "baixo" | "moderado" | "alto"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("PatientProfile", back_populates="epds_responses")
+
+
+class ConsultationStatus(str, enum.Enum):
+    scheduled = "scheduled"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class Consultation(Base):
+    __tablename__ = "consultations"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    patient_id = Column(UUID(as_uuid=False), ForeignKey("patient_profiles.id"), nullable=False)
+    doctor_id = Column(UUID(as_uuid=False), ForeignKey("doctor_profiles.id"), nullable=True)
+    scheduled_at = Column(DateTime, nullable=False)
+    status = Column(Enum(ConsultationStatus), default=ConsultationStatus.scheduled)
+    doctor_notes = Column(EncryptedString, nullable=True)  # só o médico vê
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    patient = relationship("PatientProfile", back_populates="consultations")
+
+
+class BlogArticle(Base):
+    __tablename__ = "blog_articles"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    category = Column(String, nullable=True)
+    published = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
