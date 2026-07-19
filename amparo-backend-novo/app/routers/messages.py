@@ -66,6 +66,7 @@ def enviar_mensagem(
         doctor_id=patient.doctor_id,
         sender_role="patient",
         content=payload.content.strip(),
+        attachment_id=payload.attachment_id,
     )
     db.add(mensagem)
     db.commit()
@@ -109,6 +110,7 @@ def responder_paciente(
         doctor_id=doctor.id,
         sender_role="doctor",
         content=payload.content.strip(),
+        attachment_id=payload.attachment_id,
     )
     db.add(mensagem)
     db.commit()

@@ -73,6 +73,7 @@ class UserOut(BaseModel):
     username: str
     full_name: str
     role: str
+    profile_photo_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -308,12 +309,14 @@ class BlogArticleCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
+    attachment_id: Optional[str] = None
 
 
 class MessageOut(BaseModel):
     id: str
     sender_role: str  # 'patient' | 'doctor'
     content: str
+    attachment_id: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -356,3 +359,19 @@ class AvailabilityOut(AvailabilityCreate):
 
     class Config:
         from_attributes = True
+
+
+# ---------- Arquivos ----------
+
+class StoredFileOut(BaseModel):
+    id: str
+    filename: str
+    mime_type: str
+    size: int
+
+    class Config:
+        from_attributes = True
+
+
+class ProfilePhotoSet(BaseModel):
+    file_id: str

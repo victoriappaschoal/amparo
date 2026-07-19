@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, date
 
 from sqlalchemy import (
+    LargeBinary,
     Column, String, Integer, Float, Boolean, Date, DateTime,
     ForeignKey, Enum, Text, UniqueConstraint
 )
@@ -55,6 +56,8 @@ class User(Base):
     # usuário troca a senha com ele (sem infra de e-mail no escopo atual).
     reset_code_hash = Column(String, nullable=True)
     reset_code_expires_at = Column(DateTime, nullable=True)
+    # Foto de perfil (referencia um StoredFile enviado pelo próprio usuário)
+    profile_photo_id = Column(UUID(as_uuid=False), ForeignKey("stored_files.id", use_alter=True, name="fk_users_profile_photo"), nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -221,6 +224,8 @@ class Message(Base):
     )
     sender_role = Column(String, nullable=False)  # 'patient' | 'doctor'
     content = Column(EncryptedString, nullable=False)
+    # Anexo opcional (imagem) enviado junto com a mensagem
+    attachment_id = Column(UUID(as_uuid=False), ForeignKey("stored_files.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 # Alfabeto sem caracteres ambíguos (0/O, 1/I/L) para o código de vínculo.
@@ -258,3 +263,22 @@ class AvailabilityWindow(Base):
     weekday = Column(Integer, nullable=False)        # 1=seg ... 7=dom
     start_minute = Column(Integer, nullable=False)   # 480 = 08:00
     end_minute = Column(Integer, nullable=False)     # 720 = 12:00
+
+
+class StoredFile(Base):
+    """
+    Arquivo enviado pelo app (foto de perfil ou anexo do chat), guardado
+    no próprio banco (bytea) — simples e suficiente para o escopo:
+    sem serviço externo de armazenamento. Limite de 5 MB por arquivo.
+    """
+    __tablename__ = "stored_files"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    owner_user_id = Column(
+        UUID(as_uuid=False), ForeignKey("users.id"), nullable=False, index=True,
+    )
+    filename = Column(String, nullable=False)
+    mime_type = Column(String, nullable=False)
+    size = Column(Integer, nullable=False)
+    data = Column(LargeBinary, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

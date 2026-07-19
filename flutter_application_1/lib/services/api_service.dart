@@ -13,7 +13,9 @@
 //   final calendario = await api.getMoodCalendar(start: DateTime(2026,7,1), end: DateTime(2026,7,31));
 
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// Exceção lançada quando a API responde com erro.
@@ -33,7 +35,7 @@ class ApiService {
   // - Simulador iOS:         http://localhost:8000
   // - Celular físico (Wi-Fi): http://SEU_IP_LOCAL:8000  (ex: http://192.168.0.15:8000)
   // - Produção:              https://api.seudominio.com
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'http://localhost:8000 ';
 
   final _storage = const FlutterSecureStorage();
 
@@ -738,6 +740,80 @@ class ApiService {
       'published': true,
     });
     if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// Paciente envia mensagem com imagem anexada.
+  Future<void> sendMessageWithAttachment(String content, String fileId) async {
+    final response = await _authorizedRequest('POST', '/messages', body: {
+      'content': content,
+      'attachment_id': fileId,
+    });
+    if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// Profissional envia mensagem com imagem anexada.
+  Future<void> sendMessageToPatientWithAttachment(
+    String patientId,
+    String content,
+    String fileId,
+  ) async {
+    final response = await _authorizedRequest(
+      'POST',
+      '/messages/patient/$patientId',
+      body: {'content': content, 'attachment_id': fileId},
+    );
+    if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  // ---------------- Arquivos (fotos e anexos) ----------------
+  // Imagens JPEG/PNG/WebP até 5 MB. O download exige o token, por isso as
+  // imagens são carregadas como bytes (Image.memory) e não por URL direta.
+
+  /// Envia uma imagem; retorna o id do arquivo salvo.
+  Future<String> uploadFile({
+    required List<int> bytes,
+    required String filename,
+    required String mimeType,
+  }) async {
+    final token = await _accessToken;
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/files'))
+      ..headers['Authorization'] = 'Bearer $token'
+      ..files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: filename,
+        contentType: MediaType.parse(mimeType),
+      ));
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return jsonDecode(response.body)['id'].toString();
+  }
+
+  /// Baixa os bytes de um arquivo (para exibir com Image.memory).
+  Future<Uint8List> downloadFileBytes(String fileId) async {
+    final response = await _authorizedRequest('GET', '/files/$fileId');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return response.bodyBytes;
+  }
+
+  /// Define a foto de perfil do usuário logado.
+  Future<void> setProfilePhoto(String fileId) async {
+    final response =
+        await _authorizedRequest('PUT', '/files/profile-photo', body: {
+      'file_id': fileId,
+    });
+    if (response.statusCode != 200) {
       throw ApiException(response.statusCode, _extractErrorMessage(response));
     }
   }

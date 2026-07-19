@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:file_picker/file_picker.dart';
+
 import '../services/api_service.dart';
 
 /// Perfil da paciente — integrado:
@@ -128,6 +130,46 @@ class _PerfilPacientePageState extends State<PerfilPacientePage> {
     }
   }
 
+  Future<void> _alterarFoto() async {
+    final resultado = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final arquivo = resultado?.files.single;
+    if (arquivo == null || arquivo.bytes == null) return;
+    if (arquivo.size > 5 * 1024 * 1024) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Imagem muito grande (máximo 5 MB).")),
+      );
+      return;
+    }
+    final extensao = (arquivo.extension ?? 'jpg').toLowerCase();
+    final mime = extensao == 'png'
+        ? 'image/png'
+        : extensao == 'webp'
+            ? 'image/webp'
+            : 'image/jpeg';
+    try {
+      final fileId = await _api.uploadFile(
+        bytes: arquivo.bytes!,
+        filename: arquivo.name,
+        mimeType: mime,
+      );
+      await _api.setProfilePhoto(fileId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Foto de perfil atualizada!")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    }
+  }
+
   Future<void> _sair() async {
     await _api.logout();
     if (!mounted) return;
@@ -218,10 +260,12 @@ class _PerfilPacientePageState extends State<PerfilPacientePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          CircleAvatar(
-            radius: 44,
-            backgroundColor: rosaMedio.withOpacity(0.25),
-            child: Icon(Icons.person_outline, color: vinho, size: 48),
+          _AvatarComFoto(
+            photoId: _perfil['user'] is Map
+                ? _perfil['user']['profile_photo_id']?.toString()
+                : null,
+            icone: Icons.person_outline,
+            aoAlterar: _alterarFoto,
           ),
           const SizedBox(height: 22),
           TextField(
@@ -369,6 +413,77 @@ class _PerfilPacientePageState extends State<PerfilPacientePage> {
                 color: vinho,
                 fontSize: 14.5,
                 fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Avatar circular que baixa a foto de perfil (com token) ou mostra o ícone.
+class _AvatarComFoto extends StatelessWidget {
+  final String? photoId;
+  final IconData icone;
+  final VoidCallback aoAlterar;
+
+  const _AvatarComFoto({
+    required this.photoId,
+    required this.icone,
+    required this.aoAlterar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const vinho = Color(0xFF87364E);
+    const rosaMedio = Color(0xFFB9828B);
+
+    return Center(
+      child: Stack(
+        children: [
+          photoId == null
+              ? CircleAvatar(
+                  radius: 46,
+                  backgroundColor: rosaMedio.withOpacity(0.25),
+                  child: Icon(icone, color: vinho, size: 46),
+                )
+              : FutureBuilder(
+                  future: ApiService().downloadFileBytes(photoId!),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return CircleAvatar(
+                        radius: 46,
+                        backgroundColor: rosaMedio.withOpacity(0.25),
+                        child: const CircularProgressIndicator(
+                          color: vinho,
+                          strokeWidth: 2.5,
+                        ),
+                      );
+                    }
+                    return CircleAvatar(
+                      radius: 46,
+                      backgroundImage: MemoryImage(snapshot.data!),
+                    );
+                  },
+                ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Material(
+              color: vinho,
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: aoAlterar,
+                child: const Padding(
+                  padding: EdgeInsets.all(7),
+                  child: Icon(
+                    Icons.camera_alt_outlined,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
               ),
             ),
           ),

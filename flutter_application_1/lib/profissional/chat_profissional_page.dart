@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:file_picker/file_picker.dart';
+
 import '../services/api_service.dart';
 
 /// Chat do profissional — integrado:
@@ -275,6 +277,46 @@ class _ConversaProfissionalPageState extends State<ConversaProfissionalPage> {
     }
   }
 
+  Future<void> _anexarImagem() async {
+    final resultado = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final arquivo = resultado?.files.single;
+    if (arquivo == null || arquivo.bytes == null) return;
+    if (arquivo.size > 5 * 1024 * 1024) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Imagem muito grande (máximo 5 MB).")),
+      );
+      return;
+    }
+    final extensao = (arquivo.extension ?? 'jpg').toLowerCase();
+    final mime = extensao == 'png'
+        ? 'image/png'
+        : extensao == 'webp'
+            ? 'image/webp'
+            : 'image/jpeg';
+
+    setState(() => _enviando = true);
+    try {
+      final fileId = await _api.uploadFile(
+        bytes: arquivo.bytes!,
+        filename: arquivo.name,
+        mimeType: mime,
+      );
+      await _api.sendMessageToPatientWithAttachment(widget.patientId, arquivo.name, fileId);
+      await _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
+  }
+
   String _hora(String iso) {
     final bruto = DateTime.tryParse(iso);
     if (bruto == null) return "";
@@ -371,6 +413,33 @@ class _ConversaProfissionalPageState extends State<ConversaProfissionalPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
+            if (mensagem['attachment_id'] != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: FutureBuilder(
+                  future: _api.downloadFileBytes(
+                    mensagem['attachment_id'].toString(),
+                  ),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox(
+                        width: 120,
+                        height: 90,
+                        child: Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    return Image.memory(
+                      snapshot.data!,
+                      width: 200,
+                      fit: BoxFit.cover,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
             Text(
               (mensagem['content'] ?? '').toString(),
               style: TextStyle(
@@ -399,6 +468,11 @@ class _ConversaProfissionalPageState extends State<ConversaProfissionalPage> {
       color: rosaClaro,
       child: Row(
         children: [
+          IconButton(
+            tooltip: "Anexar imagem",
+            onPressed: _enviando ? null : _anexarImagem,
+            icon: Icon(Icons.attach_file, color: vinho),
+          ),
           Expanded(
             child: TextField(
               controller: _mensagemController,
