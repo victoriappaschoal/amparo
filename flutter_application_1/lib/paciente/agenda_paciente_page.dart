@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:table_calendar/table_calendar.dart';
 
-import 'consultas_paciente_page.dart';
+import '../services/api_service.dart';
 
+/// Agenda da paciente — dados REAIS:
+///  - Calendário do mês com bolinha nos dias em que houve registro
+///    (humor via GET /mood/calendar; sintomas via GET /symptoms);
+///  - Tocar num dia abre os "Registros do dia": humor + sintomas da data;
+///  - Card da próxima consulta agendada.
 class AgendaPacientePage extends StatefulWidget {
   const AgendaPacientePage({super.key});
 
@@ -12,12 +16,131 @@ class AgendaPacientePage extends StatefulWidget {
 }
 
 class _AgendaPacientePageState extends State<AgendaPacientePage> {
-  DateTime focusedDay = DateTime.now();
-  DateTime selectedDay = DateTime.now();
-
   final Color vinho = const Color(0xFF87364E);
   final Color rosaClaro = const Color(0xFFF8CCD2);
   final Color rosaMedio = const Color(0xFFB9828B);
+
+  final _api = ApiService();
+
+  bool _carregando = true;
+  String? _erro;
+
+  DateTime _mesExibido = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime? _diaSelecionado;
+
+  Map<String, Map<String, dynamic>> _humorPorDia = {};
+  Map<String, Map<String, dynamic>> _sintomasPorDia = {};
+  Map<String, dynamic>? _proximaConsulta;
+
+  static const _nomesMeses = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+  ];
+
+  static const _rotulosSintomas = {
+    "dor_abdominal": "Dor abdominal",
+    "sangramento": "Sangramento",
+    "febre": "Febre",
+    "dor_de_cabeca": "Dor de cabeça",
+    "tontura_fraqueza": "Tontura ou fraqueza",
+    "dor_mamas": "Dor nas mamas",
+    "cansaco_intenso": "Cansaço intenso",
+    "dor_pontos_cicatriz": "Dor nos pontos/cicatriz",
+  };
+
+  static const _intensidades = [
+    "Nenhum", "Leve", "Moderado", "Forte", "Muito forte",
+  ];
+
+  static const _humores = ["", "Muito mal", "Mal", "Neutra", "Bem", "Muito bem"];
+
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
+
+  String _chave(DateTime d) =>
+      "${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}";
+
+  Future<void> _carregar() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    try {
+      final inicio = _mesExibido;
+      final fim = DateTime(_mesExibido.year, _mesExibido.month + 1, 0);
+
+      final resultados = await Future.wait([
+        _api.getMoodCalendar(start: inicio, end: fim),
+        _api.getMySymptomEntries(),
+        _api.getMyConsultations(),
+      ]);
+
+      final humor = <String, Map<String, dynamic>>{};
+      for (final registro in resultados[0]) {
+        final data = DateTime.tryParse(registro['entry_date'].toString());
+        if (data != null) humor[_chave(data)] = registro;
+      }
+
+      final sintomas = <String, Map<String, dynamic>>{};
+      for (final registro in resultados[1]) {
+        final data = DateTime.tryParse(registro['entry_date'].toString());
+        if (data != null) sintomas[_chave(data)] = registro;
+      }
+
+      Map<String, dynamic>? proxima;
+      DateTime? melhorData;
+      for (final consulta in resultados[2]) {
+        if (consulta['status'] != 'scheduled') continue;
+        final data = _paraLocal(consulta['scheduled_at']?.toString() ?? '');
+        if (data == null || data.isBefore(DateTime.now())) continue;
+        if (melhorData == null || data.isBefore(melhorData)) {
+          melhorData = data;
+          proxima = consulta;
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _humorPorDia = humor;
+        _sintomasPorDia = sintomas;
+        _proximaConsulta = proxima;
+        _carregando = false;
+      });
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      setState(() {
+        _erro = erro.message;
+        _carregando = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _erro = "Não foi possível carregar. Verifique sua conexão.";
+        _carregando = false;
+      });
+    }
+  }
+
+  DateTime? _paraLocal(String iso) {
+    final bruto = DateTime.tryParse(iso);
+    if (bruto == null) return null;
+    final utc = bruto.isUtc
+        ? bruto
+        : DateTime.utc(bruto.year, bruto.month, bruto.day, bruto.hour,
+            bruto.minute, bruto.second);
+    return utc.toLocal();
+  }
+
+  void _mudarMes(int delta) {
+    setState(() {
+      _mesExibido = DateTime(_mesExibido.year, _mesExibido.month + delta);
+      _diaSelecionado = null;
+    });
+    _carregar();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,237 +150,331 @@ class _AgendaPacientePageState extends State<AgendaPacientePage> {
         backgroundColor: rosaClaro,
         elevation: 0,
         iconTheme: IconThemeData(color: vinho),
-        title: Text(
-          "Agenda",
-          style: TextStyle(
-            color: vinho,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
         centerTitle: true,
+        title: Text(
+          "Minha agenda",
+          style: TextStyle(color: vinho, fontWeight: FontWeight.bold),
+        ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Seu calendário",
-                style: GoogleFonts.playfairDisplay(
-                  color: vinho,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              Text(
-                "Aqui ficarão suas consultas, retornos e registros dos dias.",
-                style: TextStyle(
-                  color: vinho.withOpacity(0.75),
-                  fontSize: 16,
-                  height: 1.35,
-                ),
-              ),
-
-              const SizedBox(height: 26),
-
-              calendario(),
-
-              const SizedBox(height: 28),
-
-              Text(
-                "Próximos compromissos",
-                style: TextStyle(
-                  color: vinho,
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              cardAgenda(
-                titulo: "Consulta marcada",
-                descricao: "Nenhuma consulta futura cadastrada no momento.",
-                icone: Icons.calendar_month_outlined,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const ConsultasPacientePage(),
+        child: _carregando
+            ? Center(child: CircularProgressIndicator(color: vinho))
+            : _erro != null
+                ? _telaErro()
+                : RefreshIndicator(
+                    color: vinho,
+                    onRefresh: _carregar,
+                    child: ListView(
+                      padding: const EdgeInsets.all(22),
+                      children: [
+                        _cardProximaConsulta(),
+                        const SizedBox(height: 16),
+                        _calendario(),
+                        const SizedBox(height: 16),
+                        _registrosDoDia(),
+                      ],
                     ),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 14),
-
-              cardAgenda(
-                titulo: "Registros do dia",
-                descricao: "Ao selecionar uma data, os registros poderão aparecer aqui.",
-                icone: Icons.edit_note_outlined,
-                onTap: () {},
-              ),
-            ],
-          ),
-        ),
+                  ),
       ),
     );
   }
 
-  Widget calendario() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.86),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: rosaMedio.withOpacity(0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: vinho.withOpacity(0.10),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+  Widget _telaErro() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(_erro!, style: TextStyle(color: vinho, fontSize: 16)),
+          const SizedBox(height: 16),
+          TextButton.icon(
+            onPressed: _carregar,
+            icon: Icon(Icons.refresh, color: vinho),
+            label: Text(
+              "Tentar de novo",
+              style: TextStyle(color: vinho, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
-      child: TableCalendar(
-        firstDay: DateTime.utc(2024, 1, 1),
-        lastDay: DateTime.utc(2035, 12, 31),
-        focusedDay: focusedDay,
-        calendarFormat: CalendarFormat.month,
-        selectedDayPredicate: (day) {
-          return isSameDay(selectedDay, day);
-        },
-        onDaySelected: (selected, focused) {
-          setState(() {
-            selectedDay = selected;
-            focusedDay = focused;
-          });
-        },
-        headerStyle: HeaderStyle(
-          titleCentered: true,
-          formatButtonVisible: false,
-          leftChevronIcon: Icon(
-            Icons.chevron_left,
-            color: vinho,
+    );
+  }
+
+  Widget _cardProximaConsulta() {
+    String texto;
+    if (_proximaConsulta == null) {
+      texto = "Nenhuma consulta agendada. Marque na tela Consultas.";
+    } else {
+      final data =
+          _paraLocal(_proximaConsulta!['scheduled_at'].toString())!;
+      String dois(int n) => n.toString().padLeft(2, '0');
+      texto = "Próxima consulta: ${dois(data.day)}/${dois(data.month)}"
+          "/${data.year} às ${dois(data.hour)}:${dois(data.minute)}";
+    }
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: rosaMedio.withOpacity(0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.event_available_outlined, color: vinho),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              texto,
+              style: TextStyle(
+                color: vinho,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
           ),
-          rightChevronIcon: Icon(
-            Icons.chevron_right,
-            color: vinho,
+        ],
+      ),
+    );
+  }
+
+  Widget _calendario() {
+    final primeiroDia = _mesExibido;
+    final diasNoMes =
+        DateTime(_mesExibido.year, _mesExibido.month + 1, 0).day;
+    // weekday: 1=seg ... 7=dom; queremos grade começando no domingo
+    final vaziosIniciais = primeiroDia.weekday % 7;
+    final hoje = DateTime.now();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                onPressed: () => _mudarMes(-1),
+                icon: Icon(Icons.chevron_left, color: vinho),
+              ),
+              Text(
+                "${_nomesMeses[_mesExibido.month - 1]} ${_mesExibido.year}",
+                style: GoogleFonts.playfairDisplay(
+                  color: vinho,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              IconButton(
+                onPressed: () => _mudarMes(1),
+                icon: Icon(Icons.chevron_right, color: vinho),
+              ),
+            ],
           ),
-          titleTextStyle: TextStyle(
-            color: vinho,
-            fontWeight: FontWeight.bold,
-            fontSize: 18,
+          Row(
+            children: [
+              for (final d in ["D", "S", "T", "Q", "Q", "S", "S"])
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      d,
+                      style: TextStyle(
+                        color: vinho.withOpacity(0.55),
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
+          const SizedBox(height: 6),
+          GridView.count(
+            crossAxisCount: 7,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              for (var i = 0; i < vaziosIniciais; i++) const SizedBox(),
+              for (var dia = 1; dia <= diasNoMes; dia++)
+                _celulaDia(
+                  DateTime(_mesExibido.year, _mesExibido.month, dia),
+                  hoje,
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "• = dia com registro. Toque num dia para ver os registros.",
+            style: TextStyle(
+              color: vinho.withOpacity(0.55),
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _celulaDia(DateTime data, DateTime hoje) {
+    final chave = _chave(data);
+    final temRegistro =
+        _humorPorDia.containsKey(chave) || _sintomasPorDia.containsKey(chave);
+    final ehHoje = data.year == hoje.year &&
+        data.month == hoje.month &&
+        data.day == hoje.day;
+    final selecionado = _diaSelecionado != null &&
+        _chave(_diaSelecionado!) == chave;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => setState(() => _diaSelecionado = data),
+      child: Container(
+        margin: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: selecionado
+              ? vinho
+              : ehHoje
+                  ? rosaMedio.withOpacity(0.3)
+                  : null,
+          borderRadius: BorderRadius.circular(12),
         ),
-        daysOfWeekStyle: DaysOfWeekStyle(
-          weekdayStyle: TextStyle(
-            color: vinho.withOpacity(0.8),
-            fontWeight: FontWeight.w600,
-          ),
-          weekendStyle: TextStyle(
-            color: vinho.withOpacity(0.6),
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        calendarStyle: CalendarStyle(
-          outsideDaysVisible: false,
-          todayDecoration: BoxDecoration(
-            color: rosaMedio.withOpacity(0.45),
-            shape: BoxShape.circle,
-          ),
-          selectedDecoration: BoxDecoration(
-            color: vinho,
-            shape: BoxShape.circle,
-          ),
-          selectedTextStyle: const TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
-          todayTextStyle: TextStyle(
-            color: vinho,
-            fontWeight: FontWeight.bold,
-          ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              "${data.day}",
+              style: TextStyle(
+                color: selecionado ? Colors.white : vinho,
+                fontWeight:
+                    ehHoje || selecionado ? FontWeight.bold : FontWeight.normal,
+                fontSize: 14,
+              ),
+            ),
+            Text(
+              temRegistro ? "•" : " ",
+              style: TextStyle(
+                color: selecionado ? Colors.white : vinho,
+                fontSize: 13,
+                height: 0.7,
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget cardAgenda({
-    required String titulo,
-    required String descricao,
-    required IconData icone,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.white.withOpacity(0.84),
-      borderRadius: BorderRadius.circular(22),
-      elevation: 3,
-      shadowColor: vinho.withOpacity(0.12),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(22),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: rosaMedio.withOpacity(0.22),
-                  borderRadius: BorderRadius.circular(18),
-                ),
-                child: Icon(
-                  icone,
-                  color: vinho,
-                  size: 29,
-                ),
-              ),
+  Widget _registrosDoDia() {
+    if (_diaSelecionado == null) {
+      return const SizedBox();
+    }
+    final chave = _chave(_diaSelecionado!);
+    final humor = _humorPorDia[chave];
+    final sintomas = _sintomasPorDia[chave];
+    String dois(int n) => n.toString().padLeft(2, '0');
+    final titulo =
+        "Registros de ${dois(_diaSelecionado!.day)}/${dois(_diaSelecionado!.month)}";
 
-              const SizedBox(width: 16),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      titulo,
-                      style: TextStyle(
-                        color: vinho,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 5),
-
-                    Text(
-                      descricao,
-                      style: TextStyle(
-                        color: vinho.withOpacity(0.72),
-                        fontSize: 14.2,
-                        height: 1.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              Icon(
-                Icons.arrow_forward_ios,
-                color: vinho,
-                size: 18,
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: GoogleFonts.playfairDisplay(
+              color: vinho,
+              fontSize: 21,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
+          const SizedBox(height: 10),
+          if (humor == null && sintomas == null)
+            Text(
+              "Nenhum registro neste dia.",
+              style: TextStyle(color: vinho.withOpacity(0.65), fontSize: 14.5),
+            ),
+          if (humor != null) ...[
+            Row(
+              children: [
+                Icon(Icons.mood_outlined, color: vinho, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  "Humor: ${_humores[(humor['mood_scale'] ?? 0).clamp(0, 5)]}",
+                  style: TextStyle(
+                    color: vinho,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            if ((humor['note'] ?? '').toString().isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(left: 28, top: 2),
+                child: Text(
+                  "\"${humor['note']}\"",
+                  style: TextStyle(
+                    color: vinho.withOpacity(0.7),
+                    fontSize: 13.5,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ),
+            const SizedBox(height: 10),
+          ],
+          if (sintomas != null) ...[
+            Row(
+              children: [
+                Icon(Icons.healing_outlined, color: vinho, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  "Sintomas do dia",
+                  style: TextStyle(
+                    color: vinho,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            for (final entrada
+                in (sintomas['answers'] as Map<String, dynamic>).entries)
+              if ((entrada.value ?? 0) > 0)
+                Padding(
+                  padding: const EdgeInsets.only(left: 28, bottom: 3),
+                  child: Text(
+                    "${_rotulosSintomas[entrada.key] ?? entrada.key}: "
+                    "${_intensidades[(entrada.value as int).clamp(0, 4)]}",
+                    style: TextStyle(
+                      color: vinho.withOpacity(0.8),
+                      fontSize: 13.5,
+                    ),
+                  ),
+                ),
+            if ((sintomas['answers'] as Map<String, dynamic>)
+                .values
+                .every((v) => (v ?? 0) == 0))
+              Padding(
+                padding: const EdgeInsets.only(left: 28),
+                child: Text(
+                  "Nenhum sintoma relatado — dia tranquilo!",
+                  style: TextStyle(
+                    color: Colors.green.shade700,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ),
+          ],
+        ],
       ),
     );
   }

@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -7,7 +8,7 @@ from app.database import get_db
 from app.deps import (
     get_current_patient, get_current_verified_doctor, ensure_patient_belongs_to_doctor,
 )
-from app.models import Consultation, ConsultationStatus, PatientProfile, DoctorProfile
+from app.models import Consultation, ConsultationStatus, PatientProfile, DoctorProfile, AvailabilityWindow
 from app.schemas import (
     ConsultationCreate, ConsultationOut, ConsultationDoctorView, ConsultationNoteUpdate
 )
@@ -39,6 +40,36 @@ def schedule_consultation(
 
     if quando <= datetime.utcnow():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A consulta deve ser marcada para uma data futura")
+
+    # Horários de atendimento: se o profissional cadastrou janelas, a
+    # consulta precisa cair dentro de uma (avaliada no fuso de Brasília).
+    janelas = (
+        db.query(AvailabilityWindow)
+        .filter(AvailabilityWindow.doctor_id == patient.doctor_id)
+        .all()
+    )
+    if janelas:
+        local = quando.replace(tzinfo=timezone.utc).astimezone(
+            ZoneInfo("America/Sao_Paulo")
+        )
+        minuto = local.hour * 60 + local.minute
+        atende = any(
+            j.weekday == local.isoweekday()
+            and j.start_minute <= minuto < j.end_minute
+            for j in janelas
+        )
+        if not atende:
+            dias = ["", "seg", "ter", "qua", "qui", "sex", "sáb", "dom"]
+            def hhmm(m):
+                return f"{m // 60:02d}:{m % 60:02d}"
+            descricao = "; ".join(
+                f"{dias[j.weekday]} {hhmm(j.start_minute)}-{hhmm(j.end_minute)}"
+                for j in janelas
+            )
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Fora do horário de atendimento do profissional ({descricao}).",
+            )
 
     consultation = Consultation(
         patient_id=patient.id,

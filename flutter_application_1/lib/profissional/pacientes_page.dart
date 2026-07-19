@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
-import 'detalhes_paciente_page.dart';
+import 'prontuario_paciente_page.dart';
 
 /// Pacientes em acompanhamento — integrada com o backend:
 ///   GET /patients                 -> lista das pacientes vinculadas ao médico
@@ -346,6 +346,7 @@ class _PacientesPageState extends State<PacientesPage> {
               (summary?['days_without_daily_entry'] ?? 0) as int;
 
           return cardPaciente(
+            patientId: paciente["id"].toString(),
             nome: (paciente["full_name"] ?? "Paciente").toString(),
             idade: (paciente["phone"] ?? "Telefone não informado").toString(),
             semana: _semanaPosParto(paciente["baby_birth_date"]?.toString()),
@@ -371,6 +372,7 @@ class _PacientesPageState extends State<PacientesPage> {
   }
 
   Widget cardPaciente({
+    required String patientId,
     required String nome,
     required String idade,
     required String semana,
@@ -393,13 +395,9 @@ class _PacientesPageState extends State<PacientesPage> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => DetalhesPacientePage(
-                nome: nome,
-                idade: idade,
-                semana: semana,
-                checkin: checkin,
-                alerta: alerta,
-                temAlerta: temAlerta,
+              builder: (context) => ProntuarioPacientePage(
+                patientId: patientId,
+                nomePaciente: nome,
               ),
             ),
           );

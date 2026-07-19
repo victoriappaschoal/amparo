@@ -335,3 +335,24 @@ class ResetPasswordRequest(BaseModel):
 class AdminResetCodeOut(BaseModel):
     code: str
     expires_at: datetime
+
+
+# ---------- Horarios de atendimento ----------
+
+class AvailabilityCreate(BaseModel):
+    weekday: int = Field(ge=1, le=7)          # 1=segunda ... 7=domingo
+    start_minute: int = Field(ge=0, le=1439)
+    end_minute: int = Field(ge=1, le=1440)
+
+    @model_validator(mode="after")
+    def intervalo_valido(self):
+        if self.end_minute <= self.start_minute:
+            raise ValueError("O fim da janela deve ser depois do inicio")
+        return self
+
+
+class AvailabilityOut(AvailabilityCreate):
+    id: str
+
+    class Config:
+        from_attributes = True

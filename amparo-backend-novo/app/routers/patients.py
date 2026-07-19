@@ -26,7 +26,7 @@ from app.models import (
     PatientProfile, DoctorProfile, EPDSResponse, SymptomDiaryEntry,
     Consultation, ConsultationStatus, MoodEntry,
 )
-from app.schemas import PatientListItem, PatientDetailForDoctor, PatientSummaryForDoctor
+from app.schemas import PatientListItem, PatientDetailForDoctor, PatientSummaryForDoctor, SymptomEntryOut, EPDSDoctorView
 
 router = APIRouter(prefix="/patients", tags=["Pacientes (visão do médico)"])
 
@@ -161,3 +161,39 @@ def get_patient_summary(
         last_daily_entry_date=ultimo_registro,
         days_without_daily_entry=dias_sem_registro,
     )
+
+@router.get("/{patient_id}/symptoms", response_model=list[SymptomEntryOut])
+def patient_symptoms(
+    patient_id: str,
+    doctor: DoctorProfile = Depends(get_current_verified_doctor),
+    db: Session = Depends(get_db),
+):
+    """Diário de sintomas da paciente para o prontuário (mais recentes primeiro)."""
+    p = _get_linked_patient_or_404(patient_id, doctor, db)
+    return (
+        db.query(SymptomDiaryEntry)
+        .filter(SymptomDiaryEntry.patient_id == p.id)
+        .order_by(SymptomDiaryEntry.entry_date.desc())
+        .limit(60)
+        .all()
+    )
+
+
+@router.get("/{patient_id}/epds", response_model=list[EPDSDoctorView])
+def patient_epds_history(
+    patient_id: str,
+    doctor: DoctorProfile = Depends(get_current_verified_doctor),
+    db: Session = Depends(get_db),
+):
+    """
+    Histórico do EPDS COM pontuação e risco — visível apenas para o
+    profissional vinculado (a paciente nunca recebe o score pela API).
+    """
+    p = _get_linked_patient_or_404(patient_id, doctor, db)
+    return (
+        db.query(EPDSResponse)
+        .filter(EPDSResponse.patient_id == p.id)
+        .order_by(EPDSResponse.entry_date.desc())
+        .all()
+    )
+

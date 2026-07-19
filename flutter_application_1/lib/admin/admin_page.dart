@@ -30,11 +30,12 @@ class _AdminPageState extends State<AdminPage>
   String? _erro;
   List<Map<String, dynamic>> _profissionais = [];
   List<Map<String, dynamic>> _pacientes = [];
+  List<Map<String, dynamic>> _artigos = [];
 
   @override
   void initState() {
     super.initState();
-    _abas = TabController(length: 2, vsync: this);
+    _abas = TabController(length: 3, vsync: this);
     _carregar();
   }
 
@@ -53,11 +54,13 @@ class _AdminPageState extends State<AdminPage>
       final resultados = await Future.wait([
         _api.getAdminProfessionals(),
         _api.getAdminPatients(),
+        _api.getBlogArticles(),
       ]);
       if (!mounted) return;
       setState(() {
         _profissionais = resultados[0];
         _pacientes = resultados[1];
+        _artigos = resultados[2];
         _carregando = false;
       });
     } on ApiException catch (erro) {
@@ -72,6 +75,171 @@ class _AdminPageState extends State<AdminPage>
         _erro = "Não foi possível carregar. Verifique sua conexão.";
         _carregando = false;
       });
+    }
+  }
+
+  Widget _abaBlog() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+          child: SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: _novoArtigo,
+              icon: const Icon(Icons.add),
+              label: const Text("NOVO ARTIGO"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: vinho,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: _artigos.isEmpty
+              ? Center(
+                  child: Text(
+                    "Nenhum artigo publicado ainda.",
+                    style: TextStyle(color: vinho, fontSize: 15.5),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(20),
+                  itemCount: _artigos.length,
+                  separatorBuilder: (context, index) =>
+                      const SizedBox(height: 10),
+                  itemBuilder: (context, index) {
+                    final artigo = _artigos[index];
+                    return Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(16),
+                        border:
+                            Border.all(color: rosaMedio.withOpacity(0.35)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.menu_book_outlined, color: vinho),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  (artigo['title'] ?? '').toString(),
+                                  style: TextStyle(
+                                    color: vinho,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                if ((artigo['category'] ?? '')
+                                    .toString()
+                                    .isNotEmpty)
+                                  Text(
+                                    artigo['category'].toString(),
+                                    style: TextStyle(
+                                      color: vinho.withOpacity(0.6),
+                                      fontSize: 12.5,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _novoArtigo() async {
+    final tituloController = TextEditingController();
+    final categoriaController = TextEditingController();
+    final conteudoController = TextEditingController();
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Novo artigo do blog"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: tituloController,
+                decoration: const InputDecoration(labelText: "Título"),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: categoriaController,
+                decoration: const InputDecoration(
+                  labelText: "Categoria (ex.: Amamentação)",
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: conteudoController,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  labelText: "Conteúdo",
+                  alignLabelWithHint: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancelar"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Publicar"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true) return;
+    final titulo = tituloController.text.trim();
+    final conteudo = conteudoController.text.trim();
+    if (titulo.isEmpty || conteudo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Título e conteúdo são obrigatórios.")),
+      );
+      return;
+    }
+
+    try {
+      await _api.createBlogArticle(
+        title: titulo,
+        content: conteudo,
+        category: categoriaController.text.trim().isEmpty
+            ? null
+            : categoriaController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Artigo publicado!")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
     }
   }
 
@@ -328,6 +496,7 @@ class _AdminPageState extends State<AdminPage>
           tabs: const [
             Tab(text: "Profissionais"),
             Tab(text: "Pacientes"),
+            Tab(text: "Blog"),
           ],
         ),
       ),
@@ -341,6 +510,7 @@ class _AdminPageState extends State<AdminPage>
                     children: [
                       _abaProfissionais(),
                       _abaPacientes(),
+                      _abaBlog(),
                     ],
                   ),
       ),

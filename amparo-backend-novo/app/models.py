@@ -239,3 +239,22 @@ def gerar_link_code(db_session) -> str:
         )
         if not existe:
             return codigo
+
+
+class AvailabilityWindow(Base):
+    """
+    Janela de atendimento do profissional (ex.: segunda, 08:00-12:00).
+    weekday segue o ISO: 1=segunda ... 7=domingo (igual ao Dart).
+    Horários em minutos desde a meia-noite, no fuso de Brasília.
+    Se o profissional não cadastrar nenhuma janela, qualquer horário vale.
+    """
+    __tablename__ = "availability_windows"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    doctor_id = Column(
+        UUID(as_uuid=False), ForeignKey("doctor_profiles.id"),
+        nullable=False, index=True,
+    )
+    weekday = Column(Integer, nullable=False)        # 1=seg ... 7=dom
+    start_minute = Column(Integer, nullable=False)   # 480 = 08:00
+    end_minute = Column(Integer, nullable=False)     # 720 = 12:00

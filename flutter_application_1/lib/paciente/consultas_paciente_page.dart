@@ -31,6 +31,7 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
   bool _carregando = true;
   String? _erro;
   List<Map<String, dynamic>> _consultas = [];
+  List<Map<String, dynamic>> _janelas = [];
 
   @override
   void initState() {
@@ -46,9 +47,16 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
 
     try {
       final consultas = await _api.getMyConsultations();
+      List<Map<String, dynamic>> janelas = [];
+      try {
+        janelas = await _api.getMyDoctorAvailability();
+      } catch (_) {
+        // sem janelas não bloqueia a tela
+      }
       if (!mounted) return;
       setState(() {
         _consultas = consultas;
+        _janelas = janelas;
         _carregando = false;
       });
     } on ApiException catch (erro) {
@@ -222,6 +230,16 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
     }
   }
 
+  String _descricaoJanelas() {
+    const dias = ["", "seg", "ter", "qua", "qui", "sex", "sáb", "dom"];
+    String hhmm(int m) =>
+        "${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}";
+    return _janelas
+        .map((j) =>
+            "${dias[(j['weekday'] ?? 0).clamp(0, 7)]} ${hhmm(j['start_minute'] ?? 0)}–${hhmm(j['end_minute'] ?? 0)}")
+        .join(" · ");
+  }
+
   // ---------- Formatação ----------
 
   String _formatarDataHora(String iso) {
@@ -305,6 +323,25 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
                   height: 1.35,
                 ),
               ),
+              if (_janelas.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.75),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    "Horários do profissional: ${_descricaoJanelas()}",
+                    style: TextStyle(
+                      color: vinho.withOpacity(0.8),
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               Expanded(child: _conteudo()),
             ],

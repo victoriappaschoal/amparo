@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import 'horarios_atendimento_page.dart';
 
 /// Perfil do profissional — integrado:
 ///   GET /profile/professional/me
@@ -339,6 +340,29 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
                         letterSpacing: 0.8,
                       ),
                     ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const HorariosAtendimentoPage(),
+                ),
+              );
+            },
+            icon: Icon(Icons.schedule_outlined, color: vinho),
+            label: Text(
+              "Horários de atendimento",
+              style: TextStyle(color: vinho, fontWeight: FontWeight.w600),
+            ),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(50),
+              side: BorderSide(color: vinho.withOpacity(0.5)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(25),
+              ),
             ),
           ),
           const SizedBox(height: 10),

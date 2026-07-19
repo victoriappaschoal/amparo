@@ -681,6 +681,67 @@ class ApiService {
     }
   }
 
+  // ---------------- Horários de atendimento ----------------
+  // weekday: 1=segunda ... 7=domingo; horários em minutos desde 00:00.
+
+  Future<List<Map<String, dynamic>>> getMyAvailability() async {
+    final response = await _authorizedRequest('GET', '/availability/my');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  Future<void> addAvailability({
+    required int weekday,
+    required int startMinute,
+    required int endMinute,
+  }) async {
+    final response = await _authorizedRequest('POST', '/availability/my', body: {
+      'weekday': weekday,
+      'start_minute': startMinute,
+      'end_minute': endMinute,
+    });
+    if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  Future<void> deleteAvailability(String windowId) async {
+    final response =
+        await _authorizedRequest('DELETE', '/availability/my/$windowId');
+    if (response.statusCode != 204) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// (Paciente) Janelas do profissional vinculado.
+  Future<List<Map<String, dynamic>>> getMyDoctorAvailability() async {
+    final response = await _authorizedRequest('GET', '/availability/my-doctor');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  // ---------------- Blog (admin) ----------------
+
+  Future<void> createBlogArticle({
+    required String title,
+    required String content,
+    String? category,
+  }) async {
+    final response = await _authorizedRequest('POST', '/blog', body: {
+      'title': title,
+      'content': content,
+      'category': category,
+      'published': true,
+    });
+    if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
   // ---------------- Utilitário ----------------
 
   /// Formata DateTime como 'YYYY-MM-DD', formato que o FastAPI espera para campos `date`.
