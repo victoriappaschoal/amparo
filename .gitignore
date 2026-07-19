@@ -1,0 +1,66 @@
+# ============================================================
+# .gitignore do projeto Amparo (backend FastAPI + front Flutter)
+# Renomeie este arquivo para ".gitignore" (com o ponto, sem .txt)
+# e coloque na RAIZ do repositório.
+# ============================================================
+
+# ---------- SEGREDOS — NUNCA subir ----------
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+
+# ---------- Python / Backend ----------
+**/venv/
+**/.venv/
+**/env/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ---------- Flutter / Dart ----------
+**/.dart_tool/
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/.packages
+**/.pub-cache/
+**/.pub/
+**/doc/api/
+*.g.dart
+
+# Flutter — plataformas (arquivos gerados/locais)
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug/
+**/android/app/profile/
+**/android/app/release/
+**/android/key.properties
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/ephemeral/
+**/windows/flutter/ephemeral/
+**/linux/flutter/ephemeral/
+**/macos/Flutter/ephemeral/
+
+# ---------- IDEs ----------
+.vscode/
+**/.idea/
+*.iml
+*.ipr
+*.iws
+
+# ---------- Sistema operacional ----------
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ---------- Logs e temporários ----------
+*.log
+*.tmp
+*.bak

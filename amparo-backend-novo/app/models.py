@@ -185,3 +185,28 @@ class BlogArticle(Base):
     category = Column(String, nullable=True)
     published = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Message(Base):
+    """
+    Chat básico paciente <-> profissional vinculado.
+
+    O par (patient_id, doctor_id) define a conversa. O doctor_id é gravado
+    no envio (e não resolvido na leitura) para o histórico se preservar
+    mesmo se o vínculo mudar no futuro. O conteúdo é dado sensível de
+    saúde -> criptografado no banco, como o EPDS e o diário.
+    """
+    __tablename__ = "messages"
+
+    id = Column(UUID(as_uuid=False), primary_key=True, default=gen_uuid)
+    patient_id = Column(
+        UUID(as_uuid=False), ForeignKey("patient_profiles.id"),
+        nullable=False, index=True,
+    )
+    doctor_id = Column(
+        UUID(as_uuid=False), ForeignKey("doctor_profiles.id"),
+        nullable=False, index=True,
+    )
+    sender_role = Column(String, nullable=False)  # 'patient' | 'doctor'
+    content = Column(EncryptedString, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)

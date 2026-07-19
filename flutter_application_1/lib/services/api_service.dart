@@ -527,6 +527,52 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
+  // ---------------- Chat ----------------
+  // Chat básico via polling (a tela consulta mensagens novas a cada poucos
+  // segundos). Cada mensagem: {id, sender_role: 'patient'|'doctor',
+  // content, created_at}.
+
+  /// Conversa da paciente com o profissional vinculado (vazia se sem vínculo).
+  Future<List<Map<String, dynamic>>> getMessages() async {
+    final response = await _authorizedRequest('GET', '/messages');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  /// Paciente envia mensagem ao profissional vinculado (400 se sem vínculo).
+  Future<void> sendMessage(String content) async {
+    final response = await _authorizedRequest('POST', '/messages', body: {
+      'content': content,
+    });
+    if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// Profissional lê a conversa com uma paciente vinculada.
+  Future<List<Map<String, dynamic>>> getPatientMessages(String patientId) async {
+    final response =
+        await _authorizedRequest('GET', '/messages/patient/$patientId');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  /// Profissional responde uma paciente vinculada.
+  Future<void> sendMessageToPatient(String patientId, String content) async {
+    final response = await _authorizedRequest(
+      'POST',
+      '/messages/patient/$patientId',
+      body: {'content': content},
+    );
+    if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
   // ---------------- Utilitário ----------------
 
   /// Formata DateTime como 'YYYY-MM-DD', formato que o FastAPI espera para campos `date`.

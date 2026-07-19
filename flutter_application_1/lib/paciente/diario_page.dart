@@ -1,5 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../services/api_service.dart';
+
+/// Diário de sintomas físicos — integrado com o backend:
+///   POST /symptoms  (via ApiService.registerSymptomEntry)
+///
+/// Cada resposta vira uma intensidade de 0 a 4:
+///   Nenhum=0 · Leve=1 · Moderado=2 · Forte=3 · Muito forte=4
+/// O conjunto é enviado como um mapa sintoma -> intensidade, junto com as
+/// observações livres. As respostas e observações são gravadas
+/// criptografadas no banco e só o profissional vinculado as consulta.
 class DiarioPage extends StatefulWidget {
   const DiarioPage({super.key});
 
@@ -8,14 +18,43 @@ class DiarioPage extends StatefulWidget {
 }
 
 class _DiarioPageState extends State<DiarioPage> {
-  String? p1;
-  String? p2;
-  String? p3;
-  String? p4;
-  String? p5;
-  String? p6;
-  String? p7;
-  String? p8;
+  final _api = ApiService();
+  bool _enviando = false;
+
+  static const List<String> _opcoes = [
+    "Nenhum",
+    "Leve",
+    "Moderado",
+    "Forte",
+    "Muito forte",
+  ];
+
+  /// Perguntas na ordem da tela; a chave é o identificador enviado ao
+  /// backend (o profissional vê essas chaves no prontuário).
+  static const List<({String chave, String pergunta})> _perguntas = [
+    (chave: "dor_abdominal", pergunta: "Você sentiu dor abdominal?"),
+    (chave: "sangramento", pergunta: "Como foi o sangramento hoje?"),
+    (
+      chave: "febre",
+      pergunta: "Você teve febre ou sensação de corpo quente?"
+    ),
+    (chave: "dor_de_cabeca", pergunta: "Você sentiu dor de cabeça?"),
+    (chave: "tontura_fraqueza", pergunta: "Você sentiu tontura ou fraqueza?"),
+    (
+      chave: "dor_mamas",
+      pergunta: "Você sentiu dor ou desconforto nas mamas?"
+    ),
+    (chave: "cansaco_intenso", pergunta: "Você sentiu cansaço intenso?"),
+    (
+      chave: "dor_pontos_cicatriz",
+      pergunta: "Você sentiu dor nos pontos ou na cicatriz?"
+    ),
+  ];
+
+  /// Resposta escolhida por pergunta (null = não respondida ainda).
+  final Map<String, int?> _respostas = {
+    for (final p in _perguntas) p.chave: null,
+  };
 
   final TextEditingController _observacoesController =
       TextEditingController();
@@ -26,18 +65,10 @@ class _DiarioPageState extends State<DiarioPage> {
     super.dispose();
   }
 
-  bool respostasCompletas() {
-    return p1 != null &&
-        p2 != null &&
-        p3 != null &&
-        p4 != null &&
-        p5 != null &&
-        p6 != null &&
-        p7 != null &&
-        p8 != null;
-  }
+  bool respostasCompletas() =>
+      _respostas.values.every((valor) => valor != null);
 
-  void salvarAvaliacao() {
+  Future<void> salvarAvaliacao() async {
     if (!respostasCompletas()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -49,24 +80,45 @@ class _DiarioPageState extends State<DiarioPage> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          "Avaliação física registrada com sucesso!",
-        ),
-      ),
-    );
+    setState(() => _enviando = true);
 
-    // Futuramente o backend pode receber:
-    // p1, p2, p3, p4, p5, p6, p7, p8
-    // _observacoesController.text
+    try {
+      await _api.registerSymptomEntry(
+        entryDate: DateTime.now(),
+        answers: _respostas.map((chave, valor) => MapEntry(chave, valor!)),
+        observations: _observacoesController.text.trim().isEmpty
+            ? null
+            : _observacoesController.text.trim(),
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            "Avaliação física registrada com sucesso!",
+          ),
+        ),
+      );
+      Navigator.of(context).pop();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Não foi possível enviar. Verifique sua conexão."),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _enviando = false);
+    }
   }
 
-  Widget perguntaCard(
-    String pergunta,
-    String? valorSelecionado,
-    Function(String?) onChanged,
-  ) {
+  Widget perguntaCard(String chave, String pergunta) {
     return Card(
       color: const Color(0xffFFE0EB),
       elevation: 2,
@@ -86,48 +138,19 @@ class _DiarioPageState extends State<DiarioPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 10),
-
-            RadioListTile<String>(
-              title: const Text("Nenhum"),
-              value: "Nenhum",
-              groupValue: valorSelecionado,
-              activeColor: Color(0xffFF5C93),
-              onChanged: onChanged,
-            ),
-
-            RadioListTile<String>(
-              title: const Text("Leve"),
-              value: "Leve",
-              groupValue: valorSelecionado,
-              activeColor: Color(0xffFF5C93),
-              onChanged: onChanged,
-            ),
-
-            RadioListTile<String>(
-              title: const Text("Moderado"),
-              value: "Moderado",
-              groupValue: valorSelecionado,
-              activeColor: Color(0xffFF5C93),
-              onChanged: onChanged,
-            ),
-
-            RadioListTile<String>(
-              title: const Text("Forte"),
-              value: "Forte",
-              groupValue: valorSelecionado,
-              activeColor: Color(0xffFF5C93),
-              onChanged: onChanged,
-            ),
-
-            RadioListTile<String>(
-              title: const Text("Muito forte"),
-              value: "Muito forte",
-              groupValue: valorSelecionado,
-              activeColor: Color(0xffFF5C93),
-              onChanged: onChanged,
-            ),
+            for (int i = 0; i < _opcoes.length; i++)
+              RadioListTile<int>(
+                title: Text(_opcoes[i]),
+                value: i,
+                groupValue: _respostas[chave],
+                activeColor: const Color(0xffFF5C93),
+                onChanged: (valor) {
+                  setState(() {
+                    _respostas[chave] = valor;
+                  });
+                },
+              ),
           ],
         ),
       ),
@@ -177,9 +200,7 @@ class _DiarioPageState extends State<DiarioPage> {
                 color: Color(0xffFF5C93),
               ),
             ),
-
             const SizedBox(height: 20),
-
             const Text(
               "Avaliação de Bem-Estar Físico",
               textAlign: TextAlign.center,
@@ -188,100 +209,15 @@ class _DiarioPageState extends State<DiarioPage> {
                 fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 10),
-
             const Text(
               "Responda às perguntas abaixo de acordo com os sintomas físicos que você sentiu hoje.",
               textAlign: TextAlign.center,
             ),
-
             const SizedBox(height: 30),
-
-            perguntaCard(
-              "Você sentiu dor abdominal?",
-              p1,
-              (valor) {
-                setState(() {
-                  p1 = valor;
-                });
-              },
-            ),
-
-            perguntaCard(
-              "Como foi o sangramento hoje?",
-              p2,
-              (valor) {
-                setState(() {
-                  p2 = valor;
-                });
-              },
-            ),
-
-            perguntaCard(
-              "Você teve febre ou sensação de corpo quente?",
-              p3,
-              (valor) {
-                setState(() {
-                  p3 = valor;
-                });
-              },
-            ),
-
-            perguntaCard(
-              "Você sentiu dor de cabeça?",
-              p4,
-              (valor) {
-                setState(() {
-                  p4 = valor;
-                });
-              },
-            ),
-
-            perguntaCard(
-              "Você sentiu tontura ou fraqueza?",
-              p5,
-              (valor) {
-                setState(() {
-                  p5 = valor;
-                });
-              },
-            ),
-
-            perguntaCard(
-              "Você sentiu dor ou desconforto nas mamas?",
-              p6,
-              (valor) {
-                setState(() {
-                  p6 = valor;
-                });
-              },
-            ),
-
-            perguntaCard(
-              "Você sentiu cansaço intenso?",
-              p7,
-              (valor) {
-                setState(() {
-                  p7 = valor;
-                });
-              },
-            ),
-
-            perguntaCard(
-              "Você sentiu dor nos pontos ou na cicatriz?",
-              p8,
-              (valor) {
-                setState(() {
-                  p8 = valor;
-                });
-              },
-            ),
-
+            for (final p in _perguntas) perguntaCard(p.chave, p.pergunta),
             campoObservacoes(),
-
             const SizedBox(height: 20),
-
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -292,17 +228,25 @@ class _DiarioPageState extends State<DiarioPage> {
                     vertical: 16,
                   ),
                 ),
-                onPressed: salvarAvaliacao,
-                child: const Text(
-                  "Salvar avaliação",
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                onPressed: _enviando ? null : salvarAvaliacao,
+                child: _enviando
+                    ? const SizedBox(
+                        height: 22,
+                        width: 22,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2.5,
+                        ),
+                      )
+                    : const Text(
+                        "Salvar avaliação",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
               ),
             ),
-
             const SizedBox(height: 30),
           ],
         ),

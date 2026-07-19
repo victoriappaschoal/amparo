@@ -3,11 +3,17 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../services/api_service.dart';
 
-/// Consultas da paciente — integrada com o backend:
-///   GET  /consultations                     -> lista
-///   PATCH /consultations/{id}/cancel        -> cancelar (só 'scheduled')
+/// Consultas da paciente — ciclo completo integrado com o backend:
+///   GET   /consultations                 -> listar
+///   POST  /consultations                 -> agendar (data + hora escolhidas aqui)
+///   PATCH /consultations/{id}/cancel     -> cancelar
+///   Remarcar = agenda a nova e cancela a antiga (nessa ordem, para a
+///   paciente nunca ficar sem horário se algo falhar no meio).
 ///
-/// Mantém o visual original (vinho/rosa) e o estado vazio da tela antiga.
+/// Regras do backend que aparecem aqui:
+/// - Agendar exige vínculo com um profissional (sem vínculo -> mensagem 400
+///   do próprio backend é exibida).
+/// - Só consultas com status 'scheduled' podem ser canceladas/remarcadas.
 class ConsultasPacientePage extends StatefulWidget {
   const ConsultasPacientePage({super.key});
 
@@ -60,6 +66,78 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
     }
   }
 
+  // ---------- Escolha de data e hora ----------
+
+  Future<DateTime?> _escolherDataHora() async {
+    final agora = DateTime.now();
+
+    final data = await showDatePicker(
+      context: context,
+      initialDate: agora.add(const Duration(days: 1)),
+      firstDate: agora,
+      lastDate: agora.add(const Duration(days: 365)),
+      helpText: "Escolha o dia da consulta",
+      cancelText: "Cancelar",
+      confirmText: "OK",
+    );
+    if (data == null || !mounted) return null;
+
+    final hora = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 9, minute: 0),
+      helpText: "Escolha o horário",
+      cancelText: "Cancelar",
+      confirmText: "OK",
+    );
+    if (hora == null) return null;
+
+    final escolhido =
+        DateTime(data.year, data.month, data.day, hora.hour, hora.minute);
+
+    if (escolhido.isBefore(DateTime.now())) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Escolha um horário no futuro."),
+          ),
+        );
+      }
+      return null;
+    }
+    return escolhido;
+  }
+
+  // ---------- Ações ----------
+
+  Future<void> _agendar() async {
+    final quando = await _escolherDataHora();
+    if (quando == null) return;
+
+    try {
+      await _api.scheduleConsultation(scheduledAt: quando);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Consulta marcada para ${_formatarDataHora(quando.toIso8601String())}."),
+        ),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      // Inclui o caso 400 "você ainda não está vinculada a um profissional"
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Não foi possível agendar. Verifique sua conexão."),
+        ),
+      );
+    }
+  }
+
   Future<void> _cancelar(String id) async {
     final confirmar = await showDialog<bool>(
       context: context,
@@ -97,8 +175,51 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
     }
   }
 
-  void marcarNovaConsulta(BuildContext context) {
-    Navigator.pushNamed(context, '/profissionais-paciente');
+  Future<void> _remarcar(Map<String, dynamic> consulta) async {
+    final quando = await _escolherDataHora();
+    if (quando == null) return;
+
+    try {
+      // 1) agenda a nova primeiro (se falhar, nada muda para a paciente)
+      await _api.scheduleConsultation(scheduledAt: quando);
+
+      // 2) cancela a antiga
+      try {
+        await _api.cancelConsultation(consulta['id'].toString());
+      } on ApiException {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Nova consulta marcada, mas não foi possível cancelar a "
+              "anterior — cancele-a manualmente na lista.",
+            ),
+          ),
+        );
+        _carregar();
+        return;
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Consulta remarcada para ${_formatarDataHora(quando.toIso8601String())}."),
+        ),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Não foi possível remarcar. Verifique sua conexão."),
+        ),
+      );
+    }
   }
 
   // ---------- Formatação ----------
@@ -165,7 +286,7 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
               ),
               const SizedBox(height: 10),
               Text(
-                "Aqui aparecem suas consultas marcadas, retornos e teleconsultas.",
+                "Marque, remarque ou cancele suas consultas com o profissional que acompanha você.",
                 style: TextStyle(
                   color: vinho.withOpacity(0.75),
                   fontSize: 16,
@@ -218,6 +339,7 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
       color: vinho,
       onRefresh: _carregar,
       child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         itemCount: _consultas.length + 1,
         separatorBuilder: (context, index) => const SizedBox(height: 14),
         itemBuilder: (context, index) {
@@ -287,12 +409,18 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
               ],
             ),
           ),
-          if (agendada)
+          if (agendada) ...[
+            IconButton(
+              tooltip: "Remarcar",
+              onPressed: () => _remarcar(consulta),
+              icon: Icon(Icons.edit_calendar_outlined, color: vinho),
+            ),
             IconButton(
               tooltip: "Cancelar consulta",
               onPressed: () => _cancelar(consulta['id'].toString()),
               icon: Icon(Icons.close, color: Colors.red.shade400),
             ),
+          ],
         ],
       ),
     );
@@ -343,7 +471,7 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
             ),
             const SizedBox(height: 10),
             Text(
-              "Quando uma consulta for agendada, ela aparecerá nesta página.",
+              "Toque no botão abaixo para marcar sua primeira consulta.",
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: vinho.withOpacity(0.70),
@@ -364,7 +492,7 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
       width: double.infinity,
       height: 56,
       child: ElevatedButton.icon(
-        onPressed: () => marcarNovaConsulta(context),
+        onPressed: _agendar,
         icon: const Icon(Icons.add),
         label: const Text(
           "MARCAR NOVA CONSULTA",

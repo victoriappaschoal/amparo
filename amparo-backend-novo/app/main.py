@@ -6,7 +6,7 @@ from slowapi.errors import RateLimitExceeded
 from app.config import settings
 from app.routers import (
     auth, mood, symptoms, emotional_health, consultations, blog, profile,
-    patients, admin,
+    patients, admin, messages,
 )
 from app.routers.auth import limiter
 
@@ -36,6 +36,7 @@ app.include_router(consultations.router)
 app.include_router(blog.router)
 app.include_router(patients.router)
 app.include_router(admin.router)
+app.include_router(messages.router)
 
 
 @app.get("/health", tags=["Status"])

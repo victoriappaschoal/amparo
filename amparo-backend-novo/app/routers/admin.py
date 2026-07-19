@@ -16,6 +16,7 @@ Mais listagens de apoio para a operação:
 O admin em si é criado pelo script scripts/create_admin.py (não existe
 cadastro público de admin, de propósito).
 """
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -27,6 +28,22 @@ from app.models import PatientProfile, DoctorProfile, User
 from app.schemas import (
     DoctorAssignRequest, AdminPatientListItem, DoctorProfileOut, PatientProfileOut,
 )
+
+def _uuid_ou_404(valor: Optional[str], recurso: str) -> Optional[str]:
+    """Valida o formato do ID antes de consultar o banco.
+
+    Sem isso, colar um valor que não é UUID (ex.: um token por engano)
+    derrubava a rota com erro 500; agora responde 404 com mensagem clara.
+    """
+    if valor is None:
+        return None
+    try:
+        return str(uuid.UUID(str(valor)))
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"{recurso} não encontrado (id inválido)"
+        )
+
 
 router = APIRouter(
     prefix="/admin",
@@ -68,6 +85,7 @@ def list_professionals(
 @router.patch("/professionals/{doctor_id}/verify", response_model=DoctorProfileOut)
 def verify_professional(doctor_id: str, db: Session = Depends(get_db)):
     """Marca o registro profissional como conferido, liberando acesso a pacientes."""
+    doctor_id = _uuid_ou_404(doctor_id, "Profissional")
     doctor = db.query(DoctorProfile).filter(DoctorProfile.id == doctor_id).first()
     if not doctor:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profissional não encontrado")
@@ -89,6 +107,9 @@ def assign_doctor_to_patient(
     Só aceita profissionais já verificados — evita vincular alguém cujo
     CRM/CRP ainda não foi conferido.
     """
+    patient_id = _uuid_ou_404(patient_id, "Paciente")
+    payload.doctor_id = _uuid_ou_404(payload.doctor_id, "Profissional")
+
     patient = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
     if not patient:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Paciente não encontrado")
