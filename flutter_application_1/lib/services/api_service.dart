@@ -35,7 +35,7 @@ class ApiService {
   // - Simulador iOS:         http://localhost:8000
   // - Celular físico (Wi-Fi): http://SEU_IP_LOCAL:8000  (ex: http://192.168.0.15:8000)
   // - Produção:              https://api.seudominio.com
-  static const String baseUrl = 'http://localhost:8000 ';
+  static const String baseUrl = 'http://localhost:8000';
 
   final _storage = const FlutterSecureStorage();
 
@@ -646,6 +646,31 @@ class ApiService {
       body: {'doctor_id': doctorId},
     );
     if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// (Admin) Edita um artigo do blog.
+  Future<void> updateBlogArticle({
+    required String articleId,
+    required String title,
+    required String content,
+    String? category,
+  }) async {
+    final response = await _authorizedRequest('PUT', '/blog/$articleId', body: {
+      'title': title,
+      'content': content,
+      'category': category,
+    });
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// (Admin) Exclui um artigo do blog.
+  Future<void> deleteBlogArticle(String articleId) async {
+    final response = await _authorizedRequest('DELETE', '/blog/$articleId');
+    if (response.statusCode != 204) {
       throw ApiException(response.statusCode, _extractErrorMessage(response));
     }
   }

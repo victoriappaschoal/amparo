@@ -115,10 +115,15 @@ class _AdminPageState extends State<AdminPage>
                       const SizedBox(height: 10),
                   itemBuilder: (context, index) {
                     final artigo = _artigos[index];
-                    return Container(
+                    return Material(
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(16),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => _abrirArtigo(artigo),
+                        child: Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.9),
                         borderRadius: BorderRadius.circular(16),
                         border:
                             Border.all(color: rosaMedio.withOpacity(0.35)),
@@ -151,7 +156,10 @@ class _AdminPageState extends State<AdminPage>
                               ],
                             ),
                           ),
+                          Icon(Icons.chevron_right, color: vinho),
                         ],
+                      ),
+                        ),
                       ),
                     );
                   },
@@ -159,6 +167,174 @@ class _AdminPageState extends State<AdminPage>
         ),
       ],
     );
+  }
+
+  Future<void> _abrirArtigo(Map<String, dynamic> artigo) async {
+    final acao = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text((artigo['title'] ?? '').toString()),
+        content: SizedBox(
+          width: 480,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if ((artigo['category'] ?? '').toString().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      artigo['category'].toString(),
+                      style: TextStyle(
+                        color: vinho.withOpacity(0.6),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                Text(
+                  (artigo['content'] ?? '').toString(),
+                  style: const TextStyle(fontSize: 14, height: 1.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'excluir'),
+            child: const Text("Excluir", style: TextStyle(color: Colors.red)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'editar'),
+            child: const Text("Editar"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Fechar"),
+          ),
+        ],
+      ),
+    );
+
+    if (acao == 'editar') {
+      await _editarArtigo(artigo);
+    } else if (acao == 'excluir') {
+      await _excluirArtigo(artigo);
+    }
+  }
+
+  Future<void> _editarArtigo(Map<String, dynamic> artigo) async {
+    final tituloController =
+        TextEditingController(text: (artigo['title'] ?? '').toString());
+    final categoriaController =
+        TextEditingController(text: (artigo['category'] ?? '').toString());
+    final conteudoController =
+        TextEditingController(text: (artigo['content'] ?? '').toString());
+
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Editar artigo"),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: tituloController,
+                decoration: const InputDecoration(labelText: "Título"),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: categoriaController,
+                decoration: const InputDecoration(labelText: "Categoria"),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: conteudoController,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  labelText: "Conteúdo",
+                  alignLabelWithHint: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancelar"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Salvar"),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true) return;
+    try {
+      await _api.updateBlogArticle(
+        articleId: artigo['id'].toString(),
+        title: tituloController.text.trim(),
+        content: conteudoController.text.trim(),
+        category: categoriaController.text.trim().isEmpty
+            ? null
+            : categoriaController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Artigo atualizado.")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    }
+  }
+
+  Future<void> _excluirArtigo(Map<String, dynamic> artigo) async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Excluir artigo"),
+        content: Text(
+          "Excluir \"${artigo['title']}\"? Essa ação não pode ser desfeita.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancelar"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Excluir", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirmar != true) return;
+    try {
+      await _api.deleteBlogArticle(artigo['id'].toString());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Artigo excluído.")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    }
   }
 
   Future<void> _novoArtigo() async {

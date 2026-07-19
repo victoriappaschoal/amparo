@@ -375,3 +375,10 @@ class StoredFileOut(BaseModel):
 
 class ProfilePhotoSet(BaseModel):
     file_id: str
+
+
+class BlogArticleUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    category: Optional[str] = None
+    published: Optional[bool] = None

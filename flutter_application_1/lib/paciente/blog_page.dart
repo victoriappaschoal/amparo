@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../services/api_service.dart';
+
 class BlogPage extends StatefulWidget {
   const BlogPage({super.key});
 
@@ -40,22 +42,14 @@ class _BlogPageState extends State<BlogPage> {
     });
 
     try {
-      /*
-      Quando o backend estiver pronto, esta parte será substituída por:
+      final resposta = await ApiService().getBlogArticles();
 
-      final resposta = await BlogService().listarArtigos();
-
+      if (!mounted) return;
       setState(() {
-        artigos = resposta;
-      });
-      */
-
-      await Future.delayed(
-        const Duration(milliseconds: 400),
-      );
-
-      setState(() {
-        artigos = [];
+        artigos = [
+          for (var i = 0; i < resposta.length; i++)
+            ArtigoBlog.fromJson(resposta[i], i),
+        ];
       });
     } catch (erro) {
       if (!mounted) return;
@@ -469,23 +463,27 @@ class ArtigoBlog {
     this.imagemUrl,
   });
 
-  factory ArtigoBlog.fromJson(Map<String, dynamic> json) {
+  /// Constrói a partir do JSON do backend (GET /blog).
+  factory ArtigoBlog.fromJson(Map<String, dynamic> json, int indice) {
+    final conteudo = (json['content'] ?? '').toString();
+    final primeiraLinha = conteudo.split('\n').first.trim();
+    final resumo = primeiraLinha.length > 140
+        ? '${primeiraLinha.substring(0, 140)}...'
+        : primeiraLinha;
+    // ~180 palavras por minuto de leitura
+    final minutos = (conteudo.split(' ').length / 180).ceil().clamp(1, 60);
     return ArtigoBlog(
-      id: json['id'] as int,
-      titulo: json['titulo'] as String,
-      resumo: json['resumo'] as String,
-      conteudo: json['conteudo'] as String,
-      categoria: json['categoria'] as String,
-      tempoLeituraMinutos:
-          json['tempo_leitura_minutos'] as int? ?? 1,
-      publicadoEm: json['publicado_em'] != null
-          ? DateTime.parse(
-              json['publicado_em'] as String,
-            )
-          : null,
-      imagemUrl: json['imagem_url'] as String?,
+      id: indice,
+      titulo: (json['title'] ?? '').toString(),
+      resumo: resumo,
+      conteudo: conteudo,
+      categoria: (json['category'] ?? 'Geral').toString(),
+      tempoLeituraMinutos: minutos,
+      publicadoEm: DateTime.tryParse((json['created_at'] ?? '').toString()),
+      imagemUrl: null,
     );
   }
+
 }
 
 class DetalheArtigoPage extends StatelessWidget {
