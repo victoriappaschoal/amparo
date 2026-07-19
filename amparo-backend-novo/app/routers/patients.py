@@ -24,7 +24,7 @@ from app.database import get_db
 from app.deps import get_current_verified_doctor, ensure_patient_belongs_to_doctor
 from app.models import (
     PatientProfile, DoctorProfile, EPDSResponse, SymptomDiaryEntry,
-    Consultation, ConsultationStatus,
+    Consultation, ConsultationStatus, MoodEntry,
 )
 from app.schemas import PatientListItem, PatientDetailForDoctor, PatientSummaryForDoctor
 
@@ -63,6 +63,9 @@ def list_my_patients(
             baby_birth_date=p.baby_birth_date,
             delivery_type=p.delivery_type.value if p.delivery_type else None,
             phone=p.phone,
+            emergency_contact_name=p.emergency_contact_name,
+            emergency_contact_phone=p.emergency_contact_phone,
+            emergency_contact_relationship=p.emergency_contact_relationship,
         )
         for p in patients
     ]
@@ -118,6 +121,27 @@ def get_patient_summary(
         .count()
     )
 
+    # Último registro DIÁRIO (humor ou sintomas) para o alerta de inatividade
+    ultimo_humor = (
+        db.query(MoodEntry.entry_date)
+        .filter(MoodEntry.patient_id == p.id)
+        .order_by(MoodEntry.entry_date.desc())
+        .first()
+    )
+    ultimo_sintoma = (
+        db.query(SymptomDiaryEntry.entry_date)
+        .filter(SymptomDiaryEntry.patient_id == p.id)
+        .order_by(SymptomDiaryEntry.entry_date.desc())
+        .first()
+    )
+    datas = [d[0] for d in (ultimo_humor, ultimo_sintoma) if d is not None]
+    ultimo_registro = max(datas) if datas else None
+    if ultimo_registro is not None:
+        dias_sem_registro = max(0, (date.today() - ultimo_registro).days)
+    else:
+        # Nunca registrou: conta desde o cadastro
+        dias_sem_registro = max(0, (date.today() - p.user.created_at.date()).days)
+
     next_consultation = (
         db.query(Consultation)
         .filter(
@@ -134,4 +158,6 @@ def get_patient_summary(
         last_epds_risk_level=last_epds.risk_level if last_epds else None,
         symptom_entries_last_30_days=symptom_count,
         next_consultation_at=next_consultation.scheduled_at if next_consultation else None,
+        last_daily_entry_date=ultimo_registro,
+        days_without_daily_entry=dias_sem_registro,
     )

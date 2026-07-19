@@ -20,6 +20,9 @@ class PatientRegister(BaseModel):
     baby_name: Optional[str] = None
     is_breastfeeding: bool
     phone: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relationship: Optional[str] = None
 
     @model_validator(mode="after")
     def passwords_match(self):
@@ -85,6 +88,9 @@ class PatientProfileOut(BaseModel):
     baby_name: Optional[str]
     is_breastfeeding: Optional[bool]
     phone: Optional[str]
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relationship: Optional[str] = None
     doctor_id: Optional[str]
     user: UserOut
 
@@ -98,6 +104,9 @@ class PatientProfileUpdate(BaseModel):
     baby_name: Optional[str] = None
     is_breastfeeding: Optional[bool] = None
     phone: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relationship: Optional[str] = None
 
 
 class DoctorProfileOut(BaseModel):
@@ -110,6 +119,7 @@ class DoctorProfileOut(BaseModel):
     phone: Optional[str]
     professional_bio: Optional[str]
     is_verified: bool
+    link_code: Optional[str] = None
     user: UserOut
 
     class Config:
@@ -224,6 +234,9 @@ class PatientListItem(BaseModel):
     baby_birth_date: Optional[date]
     delivery_type: Optional[str]
     phone: Optional[str]
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    emergency_contact_relationship: Optional[str] = None
 
 
 class PatientDetailForDoctor(BaseModel):
@@ -250,6 +263,11 @@ class PatientSummaryForDoctor(BaseModel):
     last_epds_risk_level: Optional[str] = None
     symptom_entries_last_30_days: int = 0
     next_consultation_at: Optional[datetime] = None
+    # Vigilância de inatividade: data do último registro diário (humor OU
+    # sintomas) e dias corridos sem registrar (conta desde o cadastro se a
+    # paciente nunca registrou). O app alerta quando passa de 3 dias.
+    last_daily_entry_date: Optional[date] = None
+    days_without_daily_entry: int = 0
 
 
 # ---------- Admin ----------
@@ -300,3 +318,20 @@ class MessageOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class LinkByCodeRequest(BaseModel):
+    """Vinculo por codigo: a paciente digita o codigo do profissional."""
+    code: str = Field(min_length=4, max_length=12)
+
+
+class ResetPasswordRequest(BaseModel):
+    """Troca de senha com o codigo temporario gerado pelo admin."""
+    username: str
+    code: str = Field(min_length=4, max_length=16)
+    new_password: str = Field(min_length=8)
+
+
+class AdminResetCodeOut(BaseModel):
+    code: str
+    expires_at: datetime

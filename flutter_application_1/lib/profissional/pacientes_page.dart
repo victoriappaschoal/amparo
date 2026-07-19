@@ -30,6 +30,7 @@ class _PacientesPageState extends State<PacientesPage> {
   final _api = ApiService();
 
   String termoBusca = "";
+  String? _meuCodigo;
   bool _carregando = true;
   String? _erro;
 
@@ -55,6 +56,14 @@ class _PacientesPageState extends State<PacientesPage> {
     });
 
     try {
+      // Perfil próprio (para exibir o código de vínculo) + lista de pacientes
+      try {
+        final perfil = await _api.getMyProfessionalProfile();
+        _meuCodigo = perfil['link_code']?.toString();
+      } catch (_) {
+        // sem código não bloqueia a tela
+      }
+
       final lista = await _api.getMyPatients();
 
       // Busca os resumos em paralelo (uma chamada por paciente).
@@ -172,6 +181,57 @@ class _PacientesPageState extends State<PacientesPage> {
                 ),
               ),
             ),
+            if (_meuCodigo != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 14),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: rosaMedio.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.key_outlined, color: vinho),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              "Seu código de vínculo",
+                              style: TextStyle(
+                                color: vinho.withOpacity(0.65),
+                                fontSize: 12.5,
+                              ),
+                            ),
+                            SelectableText(
+                              _meuCodigo!,
+                              style: TextStyle(
+                                color: vinho,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        "Compartilhe com\nsuas pacientes",
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                          color: vinho.withOpacity(0.55),
+                          fontSize: 11.5,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 18),
               child: TextField(
@@ -282,6 +342,9 @@ class _PacientesPageState extends State<PacientesPage> {
           final summary = paciente['summary'] as Map<String, dynamic>?;
           final alerta = _alertaEpds(summary);
 
+          final diasSemRegistro =
+              (summary?['days_without_daily_entry'] ?? 0) as int;
+
           return cardPaciente(
             nome: (paciente["full_name"] ?? "Paciente").toString(),
             idade: (paciente["phone"] ?? "Telefone não informado").toString(),
@@ -289,10 +352,22 @@ class _PacientesPageState extends State<PacientesPage> {
             checkin: _dataCurta(summary?["last_epds_date"]?.toString()),
             alerta: alerta.texto,
             temAlerta: alerta.temAlerta,
+            diasSemRegistro: diasSemRegistro,
+            contatoEmergencia: _contatoEmergencia(paciente),
           );
         },
       ),
     );
+  }
+
+  String? _contatoEmergencia(Map<String, dynamic> paciente) {
+    final nome = paciente['emergency_contact_name']?.toString();
+    if (nome == null || nome.isEmpty) return null;
+    final fone = paciente['emergency_contact_phone']?.toString() ?? '';
+    final parentesco =
+        paciente['emergency_contact_relationship']?.toString() ?? '';
+    final sufixo = parentesco.isEmpty ? '' : ' ($parentesco)';
+    return "$nome$sufixo — $fone";
   }
 
   Widget cardPaciente({
@@ -302,7 +377,11 @@ class _PacientesPageState extends State<PacientesPage> {
     required String checkin,
     required String alerta,
     required bool temAlerta,
+    required int diasSemRegistro,
+    String? contatoEmergencia,
   }) {
+    // Alerta de inatividade: mais de 3 dias sem registrar humor/sintomas.
+    final inativa = diasSemRegistro > 3;
     return Material(
       color: Colors.white.withOpacity(0.88),
       borderRadius: BorderRadius.circular(22),
@@ -438,6 +517,57 @@ class _PacientesPageState extends State<PacientesPage> {
                         ],
                       ),
                     ),
+                    if (inativa) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.orange.withOpacity(0.35),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.notifications_active_outlined,
+                                  size: 17,
+                                  color: Colors.orange.shade800,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    "Sem registros diários há $diasSemRegistro dias",
+                                    style: TextStyle(
+                                      color: Colors.orange.shade800,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              contatoEmergencia == null
+                                  ? "Considere entrar em contato. "
+                                      "(Sem contato de emergência cadastrado.)"
+                                  : "Contato de emergência: $contatoEmergencia",
+                              style: TextStyle(
+                                color: Colors.orange.shade900,
+                                fontSize: 12.5,
+                                height: 1.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

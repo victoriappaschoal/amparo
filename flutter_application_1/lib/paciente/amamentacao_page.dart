@@ -27,6 +27,7 @@ class _AmamentacaoPageState extends State<AmamentacaoPage> {
         content: Text("Registro de amamentação salvo com sucesso"),
       ),
     );
+    Navigator.of(context).pop();
   }
 
   @override

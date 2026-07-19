@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
+import '../services/api_service.dart';
+
+/// Perfil do profissional — integrado:
+///   GET /profile/professional/me
+///   PUT /profile/professional/me
+/// Mostra o registro (fixo), o status de verificação, o código de vínculo
+/// e permite editar nome, especialidade, teleconsulta, telefone e bio.
 class PerfilProfissionalPage extends StatefulWidget {
   const PerfilProfissionalPage({super.key});
 
   @override
-  State<PerfilProfissionalPage> createState() =>
-      _PerfilProfissionalPageState();
+  State<PerfilProfissionalPage> createState() => _PerfilProfissionalPageState();
 }
 
 class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
@@ -14,110 +19,128 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
   final Color rosaClaro = const Color(0xFFF8CCD2);
   final Color rosaMedio = const Color(0xFFB9828B);
 
-  final TextEditingController _nomeController =
-      TextEditingController(text: "Dra. Helena Martins");
+  final _api = ApiService();
 
-  final TextEditingController _emailController =
-      TextEditingController(text: "helena.martins@email.com");
+  bool _carregando = true;
+  bool _salvando = false;
+  String? _erro;
 
-  final TextEditingController _telefoneController =
-      TextEditingController(text: "(34) 99999-9999");
+  Map<String, dynamic> _perfil = {};
+  final _nomeController = TextEditingController();
+  final _especialidadeController = TextEditingController();
+  final _telefoneController = TextEditingController();
+  final _bioController = TextEditingController();
+  bool _teleconsulta = false;
 
-  final TextEditingController _registroController =
-      TextEditingController(text: "CRM 123456");
-
-  final TextEditingController _especialidadeController =
-      TextEditingController(text: "Ginecologia e Obstetrícia");
-
-  final TextEditingController _descricaoController =
-      TextEditingController(
-    text:
-        "Médica especializada no acompanhamento da saúde da mulher, gestação e puerpério.",
-  );
-
-  bool modoEdicao = false;
-  bool atendeTeleconsulta = true;
-  bool notificacoesAtivas = true;
+  @override
+  void initState() {
+    super.initState();
+    _carregar();
+  }
 
   @override
   void dispose() {
     _nomeController.dispose();
-    _emailController.dispose();
-    _telefoneController.dispose();
-    _registroController.dispose();
     _especialidadeController.dispose();
-    _descricaoController.dispose();
+    _telefoneController.dispose();
+    _bioController.dispose();
     super.dispose();
   }
 
-  void alternarEdicao() {
-    if (modoEdicao) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Perfil atualizado com sucesso"),
-        ),
-      );
-    }
-
+  Future<void> _carregar() async {
     setState(() {
-      modoEdicao = !modoEdicao;
+      _carregando = true;
+      _erro = null;
     });
+    try {
+      final perfil = await _api.getMyProfessionalProfile();
+      if (!mounted) return;
+      final user = perfil['user'];
+      setState(() {
+        _perfil = perfil;
+        _nomeController.text = user is Map
+            ? (user['full_name'] ?? '').toString()
+            : '';
+        _especialidadeController.text = (perfil['specialty'] ?? '').toString();
+        _telefoneController.text = (perfil['phone'] ?? '').toString();
+        _bioController.text = (perfil['professional_bio'] ?? '').toString();
+        _teleconsulta = perfil['offers_teleconsultation'] == true;
+        _carregando = false;
+      });
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      setState(() {
+        _erro = erro.message;
+        _carregando = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _erro = "Não foi possível carregar. Verifique sua conexão.";
+        _carregando = false;
+      });
+    }
   }
 
-  void confirmarSaida() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: rosaClaro,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(22),
-          ),
-          title: Text(
-            "Sair da conta",
-            style: TextStyle(
-              color: vinho,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          content: Text(
-            "Tem certeza de que deseja sair?",
-            style: TextStyle(
-              color: vinho.withOpacity(0.80),
-              fontSize: 15,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: Text(
-                "Cancelar",
-                style: TextStyle(
-                  color: vinho,
-                ),
-              ),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
+  Future<void> _salvar() async {
+    final nome = _nomeController.text.trim();
+    if (nome.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("O nome não pode ficar vazio.")),
+      );
+      return;
+    }
 
-                Navigator.pushNamedAndRemoveUntil(
-                  context,
-                  '/login',
-                  (route) => false,
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: vinho,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text("Sair"),
-            ),
-          ],
-        );
-      },
+    setState(() => _salvando = true);
+    try {
+      await _api.updateMyProfessionalProfile(
+        fullName: nome,
+        specialty: _especialidadeController.text.trim(),
+        offersTeleconsultation: _teleconsulta,
+        phone: _telefoneController.text.trim(),
+        professionalBio: _bioController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Dados atualizados com sucesso!")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
+  }
+
+  Future<void> _sair() async {
+    await _api.logout();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
+
+  String _registro() {
+    final tipo = _perfil['professional_type'] == 'psicologo' ? 'CRP' : 'CRM';
+    return "$tipo ${_perfil['registration_number'] ?? ''}/"
+        "${_perfil['registration_state'] ?? ''}";
+  }
+
+  InputDecoration _decoracao(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: vinho.withOpacity(0.7)),
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.9),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: rosaMedio.withOpacity(0.5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: vinho, width: 2),
+      ),
     );
   }
 
@@ -128,484 +151,207 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
       appBar: AppBar(
         backgroundColor: rosaClaro,
         elevation: 0,
-        iconTheme: IconThemeData(
-          color: vinho,
-        ),
-        title: Text(
-          "Perfil profissional",
-          style: TextStyle(
-            color: vinho,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        iconTheme: IconThemeData(color: vinho),
         centerTitle: true,
-        actions: [
-          IconButton(
-            onPressed: alternarEdicao,
-            icon: Icon(
-              modoEdicao
-                  ? Icons.check
-                  : Icons.edit_outlined,
-              color: vinho,
-            ),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            24,
-            12,
-            24,
-            30,
-          ),
-          child: Column(
-            children: [
-              cabecalhoPerfil(),
-
-              const SizedBox(height: 24),
-
-              blocoInformacoes(
-                titulo: "Dados pessoais",
-                icone: Icons.person_outline,
-                children: [
-                  campoPerfil(
-                    label: "Nome completo",
-                    controller: _nomeController,
-                    icone: Icons.person_outline,
-                  ),
-                  const SizedBox(height: 14),
-                  campoPerfil(
-                    label: "E-mail",
-                    controller: _emailController,
-                    icone: Icons.email_outlined,
-                    tipoTeclado:
-                        TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 14),
-                  campoPerfil(
-                    label: "Telefone",
-                    controller: _telefoneController,
-                    icone: Icons.phone_outlined,
-                    tipoTeclado: TextInputType.phone,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-              blocoInformacoes(
-                titulo: "Dados profissionais",
-                icone: Icons.medical_services_outlined,
-                children: [
-                  campoPerfil(
-                    label: "Registro profissional",
-                    controller: _registroController,
-                    icone: Icons.badge_outlined,
-                  ),
-                  const SizedBox(height: 14),
-                  campoPerfil(
-                    label: "Especialidade",
-                    controller: _especialidadeController,
-                    icone: Icons.local_hospital_outlined,
-                  ),
-                  const SizedBox(height: 14),
-                  campoPerfil(
-                    label: "Apresentação profissional",
-                    controller: _descricaoController,
-                    icone: Icons.description_outlined,
-                    maxLinhas: 4,
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 20),
-
-              blocoConfiguracoes(),
-
-              const SizedBox(height: 22),
-
-              if (modoEdicao)
-                SizedBox(
-                  width: double.infinity,
-                  height: 54,
-                  child: ElevatedButton.icon(
-                    onPressed: alternarEdicao,
-                    icon: const Icon(
-                      Icons.save_outlined,
-                    ),
-                    label: const Text(
-                      "SALVAR ALTERAÇÕES",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.7,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: vinho,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(27),
-                      ),
-                    ),
-                  ),
-                ),
-
-              if (modoEdicao)
-                const SizedBox(height: 16),
-
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: OutlinedButton.icon(
-                  onPressed: confirmarSaida,
-                  icon: const Icon(
-                    Icons.logout,
-                    color: Colors.red,
-                  ),
-                  label: const Text(
-                    "SAIR DA CONTA",
-                    style: TextStyle(
-                      color: Colors.red,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(
-                      color: Colors.red,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(27),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        title: Text(
+          "Meu perfil",
+          style: TextStyle(color: vinho, fontWeight: FontWeight.bold),
         ),
       ),
+      body: SafeArea(child: _conteudo()),
     );
   }
 
-  Widget cabecalhoPerfil() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(22),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(26),
-        boxShadow: [
-          BoxShadow(
-            color: vinho.withOpacity(0.12),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Container(
-            width: 105,
-            height: 105,
-            decoration: BoxDecoration(
-              color: rosaMedio.withOpacity(0.25),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: vinho.withOpacity(0.35),
-                width: 2,
+  Widget _conteudo() {
+    if (_carregando) {
+      return Center(child: CircularProgressIndicator(color: vinho));
+    }
+    if (_erro != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_erro!, style: TextStyle(color: vinho, fontSize: 16)),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _carregar,
+              icon: Icon(Icons.refresh, color: vinho),
+              label: Text(
+                "Tentar de novo",
+                style: TextStyle(color: vinho, fontWeight: FontWeight.bold),
               ),
             ),
+          ],
+        ),
+      );
+    }
+
+    final verificado = _perfil['is_verified'] == true;
+    final codigo = _perfil['link_code']?.toString();
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CircleAvatar(
+            radius: 44,
+            backgroundColor: rosaMedio.withOpacity(0.25),
             child: Icon(
-              Icons.person_outline,
+              Icons.medical_services_outlined,
               color: vinho,
-              size: 58,
+              size: 44,
             ),
           ),
-
-          const SizedBox(height: 16),
-
-          Text(
-            _nomeController.text,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.playfairDisplay(
-              color: vinho,
-              fontSize: 29,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
-          Text(
-            _especialidadeController.text,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: vinho.withOpacity(0.75),
-              fontSize: 15.5,
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
+          const SizedBox(height: 14),
+          // Registro + status de verificação
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 13,
-              vertical: 7,
-            ),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: vinho.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(18),
+              color: Colors.white.withOpacity(0.8),
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Text(
-              _registroController.text,
-              style: TextStyle(
-                color: vinho,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget blocoInformacoes({
-    required String titulo,
-    required IconData icone,
-    required List<Widget> children,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: rosaMedio.withOpacity(0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: vinho.withOpacity(0.09),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: rosaMedio.withOpacity(0.22),
-                  borderRadius:
-                      BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  icone,
-                  color: vinho,
-                  size: 27,
-                ),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Text(
-                  titulo,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _registro(),
                   style: TextStyle(
                     color: vinho,
-                    fontSize: 19,
                     fontWeight: FontWeight.bold,
+                    fontSize: 15,
                   ),
                 ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          ...children,
-        ],
-      ),
-    );
-  }
-
-  Widget campoPerfil({
-    required String label,
-    required TextEditingController controller,
-    required IconData icone,
-    TextInputType tipoTeclado =
-        TextInputType.text,
-    int maxLinhas = 1,
-  }) {
-    return TextField(
-      controller: controller,
-      enabled: modoEdicao,
-      keyboardType: tipoTeclado,
-      maxLines: maxLinhas,
-      onChanged: (_) {
-        setState(() {});
-      },
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(
-          color: vinho,
-          fontWeight: FontWeight.w500,
-        ),
-        prefixIcon: Icon(
-          icone,
-          color: vinho,
-        ),
-        filled: true,
-        fillColor: modoEdicao
-            ? Colors.white
-            : rosaClaro.withOpacity(0.30),
-        contentPadding:
-            const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 15,
-        ),
-        disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(
-            color: rosaMedio.withOpacity(0.40),
-          ),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(
-            color: rosaMedio.withOpacity(0.60),
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide(
-            color: vinho,
-            width: 2,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget blocoConfiguracoes() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: rosaMedio.withOpacity(0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: vinho.withOpacity(0.09),
-            blurRadius: 10,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: rosaMedio.withOpacity(0.22),
-                  borderRadius:
-                      BorderRadius.circular(16),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: verificado
+                        ? Colors.green.withOpacity(0.12)
+                        : Colors.orange.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    verificado ? "Verificado" : "Aguardando verificação",
+                    style: TextStyle(
+                      color: verificado
+                          ? Colors.green.shade700
+                          : Colors.orange.shade800,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-                child: Icon(
-                  Icons.settings_outlined,
-                  color: vinho,
-                  size: 27,
-                ),
-              ),
-
-              const SizedBox(width: 13),
-
-              Text(
-                "Configurações",
-                style: TextStyle(
-                  color: vinho,
-                  fontSize: 19,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-
+          if (codigo != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.8),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    "Código de vínculo (compartilhe com suas pacientes)",
+                    style: TextStyle(
+                      color: vinho.withOpacity(0.65),
+                      fontSize: 12.5,
+                    ),
+                  ),
+                  SelectableText(
+                    codigo,
+                    style: TextStyle(
+                      color: vinho,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
+          TextField(
+            controller: _nomeController,
+            decoration: _decoracao("Nome completo"),
+          ),
           const SizedBox(height: 14),
-
+          TextField(
+            controller: _especialidadeController,
+            decoration: _decoracao("Especialidade"),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _telefoneController,
+            keyboardType: TextInputType.phone,
+            decoration: _decoracao("Telefone"),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _bioController,
+            maxLines: 3,
+            decoration: _decoracao("Apresentação (bio)"),
+          ),
+          const SizedBox(height: 6),
           SwitchListTile(
-            contentPadding: EdgeInsets.zero,
+            value: _teleconsulta,
+            onChanged: (valor) => setState(() => _teleconsulta = valor),
             activeColor: vinho,
             title: Text(
-              "Atendimento por teleconsulta",
+              "Atendo por teleconsulta",
+              style: TextStyle(color: vinho, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 54,
+            child: ElevatedButton(
+              onPressed: _salvando ? null : _salvar,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: vinho,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(27),
+                ),
+              ),
+              child: _salvando
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : const Text(
+                      "SALVAR ALTERAÇÕES",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: _sair,
+            icon: Icon(Icons.logout, color: Colors.red.shade400, size: 20),
+            label: Text(
+              "Sair da conta",
               style: TextStyle(
-                color: vinho,
+                color: Colors.red.shade400,
                 fontWeight: FontWeight.w600,
               ),
             ),
-            subtitle: Text(
-              atendeTeleconsulta
-                  ? "Disponível para teleconsultas"
-                  : "Indisponível para teleconsultas",
-              style: TextStyle(
-                color: vinho.withOpacity(0.65),
-              ),
-            ),
-            value: atendeTeleconsulta,
-            onChanged: modoEdicao
-                ? (valor) {
-                    setState(() {
-                      atendeTeleconsulta = valor;
-                    });
-                  }
-                : null,
-          ),
-
-          Divider(
-            color: rosaMedio.withOpacity(0.35),
-          ),
-
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            activeColor: vinho,
-            title: Text(
-              "Notificações",
-              style: TextStyle(
-                color: vinho,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            subtitle: Text(
-              notificacoesAtivas
-                  ? "Alertas e consultas ativados"
-                  : "Notificações desativadas",
-              style: TextStyle(
-                color: vinho.withOpacity(0.65),
-              ),
-            ),
-            value: notificacoesAtivas,
-            onChanged: modoEdicao
-                ? (valor) {
-                    setState(() {
-                      notificacoesAtivas = valor;
-                    });
-                  }
-                : null,
           ),
         ],
       ),

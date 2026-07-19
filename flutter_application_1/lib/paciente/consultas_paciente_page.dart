@@ -225,11 +225,23 @@ class _ConsultasPacientePageState extends State<ConsultasPacientePage> {
   // ---------- Formatação ----------
 
   String _formatarDataHora(String iso) {
-    final data = DateTime.tryParse(iso)?.toLocal();
+    final data = _paraLocal(iso);
     if (data == null) return iso;
     String dois(int n) => n.toString().padLeft(2, '0');
     return "${dois(data.day)}/${dois(data.month)}/${data.year} às "
         "${dois(data.hour)}:${dois(data.minute)}";
+  }
+
+  /// O backend grava horários em UTC sem marcar o fuso na resposta;
+  /// aqui interpretamos como UTC e convertemos para o horário local.
+  DateTime? _paraLocal(String iso) {
+    final bruto = DateTime.tryParse(iso);
+    if (bruto == null) return null;
+    final utc = bruto.isUtc
+        ? bruto
+        : DateTime.utc(bruto.year, bruto.month, bruto.day, bruto.hour,
+            bruto.minute, bruto.second);
+    return utc.toLocal();
   }
 
   String _statusLabel(String status) {

@@ -276,8 +276,14 @@ class _ConversaProfissionalPageState extends State<ConversaProfissionalPage> {
   }
 
   String _hora(String iso) {
-    final data = DateTime.tryParse(iso)?.toLocal();
-    if (data == null) return "";
+    final bruto = DateTime.tryParse(iso);
+    if (bruto == null) return "";
+    // O backend grava em UTC sem marcar o fuso; interpretamos como UTC.
+    final utc = bruto.isUtc
+        ? bruto
+        : DateTime.utc(bruto.year, bruto.month, bruto.day, bruto.hour,
+            bruto.minute, bruto.second);
+    final data = utc.toLocal();
     String dois(int n) => n.toString().padLeft(2, '0');
     return "${dois(data.hour)}:${dois(data.minute)}";
   }

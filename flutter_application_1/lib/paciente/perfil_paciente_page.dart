@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../services/sessao_usuario.dart';
+import '../services/api_service.dart';
 
+/// Perfil da paciente — integrado:
+///   GET /profile/patient/me   (carrega os dados reais)
+///   PUT /profile/patient/me   (salva nome, nome do bebê, amamentação, telefone)
+/// Campos fixos (data do parto, tipo de parto, e-mail) aparecem somente
+/// para leitura. Inclui o botão "Sair da conta".
 class PerfilPacientePage extends StatefulWidget {
   const PerfilPacientePage({super.key});
 
@@ -15,107 +20,155 @@ class _PerfilPacientePageState extends State<PerfilPacientePage> {
   final Color rosaClaro = const Color(0xFFF8CCD2);
   final Color rosaMedio = const Color(0xFFB9828B);
 
-  bool editando = false;
-  bool notificacoesAtivas = true;
-  bool lembreteCheckin = true;
+  final _api = ApiService();
 
-  late TextEditingController nomeController;
-  late TextEditingController emailController;
-  late TextEditingController telefoneController;
-  late TextEditingController dataNascimentoController;
-  late TextEditingController dataPartoController;
-  late TextEditingController tipoPartoController;
-  late TextEditingController amamentandoController;
-  late TextEditingController semanaController;
+  bool _carregando = true;
+  bool _salvando = false;
+  String? _erro;
+
+  Map<String, dynamic> _perfil = {};
+  final _nomeController = TextEditingController();
+  final _bebeController = TextEditingController();
+  final _telefoneController = TextEditingController();
+  final _emergenciaNomeController = TextEditingController();
+  final _emergenciaTelefoneController = TextEditingController();
+  final _emergenciaParentescoController = TextEditingController();
+  bool _amamentando = false;
 
   @override
   void initState() {
     super.initState();
-
-    final paciente = SessaoUsuario.pacienteAtual;
-
-    nomeController = TextEditingController(text: paciente.nomeCompleto);
-    emailController = TextEditingController(text: paciente.email);
-    telefoneController = TextEditingController(text: paciente.telefone);
-    dataNascimentoController =
-        TextEditingController(text: paciente.dataNascimento);
-    dataPartoController = TextEditingController(text: paciente.dataParto);
-    tipoPartoController = TextEditingController(text: paciente.tipoParto);
-    amamentandoController = TextEditingController(text: paciente.amamentando);
-    semanaController = TextEditingController(text: paciente.semanaPosParto);
+    _carregar();
   }
 
   @override
   void dispose() {
-    nomeController.dispose();
-    emailController.dispose();
-    telefoneController.dispose();
-    dataNascimentoController.dispose();
-    dataPartoController.dispose();
-    tipoPartoController.dispose();
-    amamentandoController.dispose();
-    semanaController.dispose();
+    _nomeController.dispose();
+    _bebeController.dispose();
+    _telefoneController.dispose();
+    _emergenciaNomeController.dispose();
+    _emergenciaTelefoneController.dispose();
+    _emergenciaParentescoController.dispose();
     super.dispose();
   }
 
-  void alternarEdicao() {
-    if (editando) {
-      salvarAlteracoes();
-    } else {
+  Future<void> _carregar() async {
+    setState(() {
+      _carregando = true;
+      _erro = null;
+    });
+    try {
+      final perfil = await _api.getMyPatientProfile();
+      if (!mounted) return;
+      final user = perfil['user'];
       setState(() {
-        editando = true;
+        _perfil = perfil;
+        _nomeController.text = user is Map
+            ? (user['full_name'] ?? '').toString()
+            : '';
+        _bebeController.text = (perfil['baby_name'] ?? '').toString();
+        _telefoneController.text = (perfil['phone'] ?? '').toString();
+        _emergenciaNomeController.text =
+            (perfil['emergency_contact_name'] ?? '').toString();
+        _emergenciaTelefoneController.text =
+            (perfil['emergency_contact_phone'] ?? '').toString();
+        _emergenciaParentescoController.text =
+            (perfil['emergency_contact_relationship'] ?? '').toString();
+        _amamentando = perfil['is_breastfeeding'] == true;
+        _carregando = false;
+      });
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      setState(() {
+        _erro = erro.message;
+        _carregando = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _erro = "Não foi possível carregar. Verifique sua conexão.";
+        _carregando = false;
       });
     }
   }
 
-  void salvarAlteracoes() {
-    if (nomeController.text.trim().isEmpty) {
+  Future<void> _salvar() async {
+    final nome = _nomeController.text.trim();
+    if (nome.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Informe o nome da paciente."),
-        ),
+        const SnackBar(content: Text("O nome não pode ficar vazio.")),
       );
       return;
     }
 
-    final paciente = SessaoUsuario.pacienteAtual;
-
-    paciente.nomeCompleto = nomeController.text.trim();
-    paciente.email = emailController.text.trim();
-    paciente.telefone = telefoneController.text.trim();
-    paciente.dataNascimento = dataNascimentoController.text.trim();
-    paciente.dataParto = dataPartoController.text.trim();
-    paciente.tipoParto = tipoPartoController.text.trim();
-    paciente.amamentando = amamentandoController.text.trim();
-    paciente.semanaPosParto = semanaController.text.trim();
-
-    /*
-    Depois, quando juntar com o back-end, essa parte pode virar:
-
-    await PacienteService().atualizarPerfil(paciente.toJson());
-
-    Se o back-end retornar sucesso, mantém os dados na SessaoUsuario.
-    */
-
-    setState(() {
-      editando = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Perfil atualizado com sucesso!"),
-      ),
-    );
+    setState(() => _salvando = true);
+    try {
+      await _api.updateMyPatientProfile(
+        fullName: nome,
+        babyName: _bebeController.text.trim(),
+        isBreastfeeding: _amamentando,
+        phone: _telefoneController.text.trim(),
+        emergencyContactName: _emergenciaNomeController.text.trim(),
+        emergencyContactPhone: _emergenciaTelefoneController.text.trim(),
+        emergencyContactRelationship:
+            _emergenciaParentescoController.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Dados atualizados com sucesso!")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _salvando = false);
+    }
   }
 
-  String primeiroNome() {
-    final nome = nomeController.text.trim();
+  Future<void> _sair() async {
+    await _api.logout();
+    if (!mounted) return;
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
 
-    if (nome.isEmpty) {
-      return "Paciente";
+  String _dataBr(String? iso) {
+    final data = iso == null ? null : DateTime.tryParse(iso);
+    if (data == null) return "não informada";
+    String dois(int n) => n.toString().padLeft(2, '0');
+    return "${dois(data.day)}/${dois(data.month)}/${data.year}";
+  }
+
+  String _tipoParto(String? valor) {
+    switch (valor) {
+      case 'normal':
+        return "Parto normal";
+      case 'cesarea':
+        return "Cesárea";
+      case 'forceps':
+        return "Fórceps";
+      default:
+        return "não informado";
     }
+  }
 
-    return nome.split(" ").first;
+  InputDecoration _decoracao(String label) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: TextStyle(color: vinho.withOpacity(0.7)),
+      filled: true,
+      fillColor: Colors.white.withOpacity(0.9),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: rosaMedio.withOpacity(0.5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(16),
+        borderSide: BorderSide(color: vinho, width: 2),
+      ),
+    );
   }
 
   @override
@@ -128,471 +181,198 @@ class _PerfilPacientePageState extends State<PerfilPacientePage> {
         iconTheme: IconThemeData(color: vinho),
         centerTitle: true,
         title: Text(
-          "Perfil da paciente",
-          style: TextStyle(
-            color: vinho,
-            fontWeight: FontWeight.bold,
-          ),
+          "Meu perfil",
+          style: TextStyle(color: vinho, fontWeight: FontWeight.bold),
         ),
-        actions: [
-          IconButton(
-            onPressed: alternarEdicao,
-            icon: Icon(
-              editando ? Icons.check : Icons.edit_outlined,
+      ),
+      body: SafeArea(child: _conteudo()),
+    );
+  }
+
+  Widget _conteudo() {
+    if (_carregando) {
+      return Center(child: CircularProgressIndicator(color: vinho));
+    }
+    if (_erro != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_erro!, style: TextStyle(color: vinho, fontSize: 16)),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _carregar,
+              icon: Icon(Icons.refresh, color: vinho),
+              label: Text(
+                "Tentar de novo",
+                style: TextStyle(color: vinho, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CircleAvatar(
+            radius: 44,
+            backgroundColor: rosaMedio.withOpacity(0.25),
+            child: Icon(Icons.person_outline, color: vinho, size: 48),
+          ),
+          const SizedBox(height: 22),
+          TextField(
+            controller: _nomeController,
+            decoration: _decoracao("Nome completo"),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _bebeController,
+            decoration: _decoracao("Nome do bebê"),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _telefoneController,
+            keyboardType: TextInputType.phone,
+            decoration: _decoracao("Telefone"),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            "Contato de emergência",
+            style: TextStyle(
               color: vinho,
-              size: 29,
+              fontSize: 15.5,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _emergenciaNomeController,
+            decoration: _decoracao("Nome do contato"),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _emergenciaTelefoneController,
+            keyboardType: TextInputType.phone,
+            decoration: _decoracao("Telefone do contato"),
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _emergenciaParentescoController,
+            decoration: _decoracao("Parentesco / ligação"),
+          ),
+          const SizedBox(height: 10),
+          SwitchListTile(
+            value: _amamentando,
+            onChanged: (valor) => setState(() => _amamentando = valor),
+            activeColor: vinho,
+            title: Text(
+              "Estou amamentando",
+              style: TextStyle(color: vinho, fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.75),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _linhaFixa(
+                  "E-mail",
+                  (_perfil['user'] is Map
+                          ? _perfil['user']['email'] ?? '—'
+                          : '—')
+                      .toString(),
+                ),
+                _linhaFixa(
+                  "Data do parto",
+                  _dataBr(_perfil['baby_birth_date']?.toString()),
+                ),
+                _linhaFixa(
+                  "Tipo de parto",
+                  _tipoParto(_perfil['delivery_type']?.toString()),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          SizedBox(
+            height: 54,
+            child: ElevatedButton(
+              onPressed: _salvando ? null : _salvar,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: vinho,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(27),
+                ),
+              ),
+              child: _salvando
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.5,
+                      ),
+                    )
+                  : const Text(
+                      "SALVAR ALTERAÇÕES",
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: _sair,
+            icon: Icon(Icons.logout, color: Colors.red.shade400, size: 20),
+            label: Text(
+              "Sair da conta",
+              style: TextStyle(
+                color: Colors.red.shade400,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(22, 12, 22, 28),
-          child: Column(
-            children: [
-              cardPrincipal(),
-
-              const SizedBox(height: 18),
-
-              blocoInformacoes(
-                icone: Icons.person_outline,
-                titulo: "Dados pessoais",
-                child: Column(
-                  children: [
-                    campoEditavel(
-                      label: "Nome completo",
-                      controller: nomeController,
-                      icone: Icons.person_outline,
-                    ),
-                    const SizedBox(height: 14),
-                    campoEditavel(
-                      label: "E-mail",
-                      controller: emailController,
-                      icone: Icons.email_outlined,
-                      keyboardType: TextInputType.emailAddress,
-                    ),
-                    const SizedBox(height: 14),
-                    campoEditavel(
-                      label: "Telefone",
-                      controller: telefoneController,
-                      icone: Icons.phone_outlined,
-                      keyboardType: TextInputType.phone,
-                    ),
-                    const SizedBox(height: 14),
-                    campoEditavel(
-                      label: "Data de nascimento",
-                      controller: dataNascimentoController,
-                      icone: Icons.cake_outlined,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 18),
-
-              blocoInformacoes(
-                icone: Icons.favorite_border,
-                titulo: "Dados do puerpério",
-                child: Column(
-                  children: [
-                    campoEditavel(
-                      label: "Data em que teve o bebê",
-                      controller: dataPartoController,
-                      icone: Icons.calendar_month_outlined,
-                    ),
-                    const SizedBox(height: 14),
-                    campoEditavel(
-                      label: "Tipo de parto",
-                      controller: tipoPartoController,
-                      icone: Icons.local_hospital_outlined,
-                    ),
-                    const SizedBox(height: 14),
-                    campoEditavel(
-                      label: "Amamentação",
-                      controller: amamentandoController,
-                      icone: Icons.child_care_outlined,
-                    ),
-                    const SizedBox(height: 14),
-                    campoEditavel(
-                      label: "Semana atual",
-                      controller: semanaController,
-                      icone: Icons.favorite_outline,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 18),
-
-              blocoConfiguracoes(),
-
-              const SizedBox(height: 26),
-
-              botaoSair(),
-            ],
-          ),
-        ),
       ),
     );
   }
 
-  Widget cardPrincipal() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 28, 24, 26),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: vinho.withOpacity(0.10),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
+  Widget _linhaFixa(String rotulo, String valor) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
         children: [
-          Container(
-            width: 118,
-            height: 118,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: rosaMedio.withOpacity(0.6),
-                width: 2,
-              ),
-              color: rosaClaro.withOpacity(0.35),
-            ),
-            child: Icon(
-              Icons.person_outline,
-              size: 58,
-              color: vinho,
-            ),
-          ),
-
-          const SizedBox(height: 22),
-
           Text(
-            nomeController.text.trim().isEmpty
-                ? "Paciente"
-                : nomeController.text.trim(),
-            textAlign: TextAlign.center,
-            style: GoogleFonts.playfairDisplay(
-              color: vinho,
-              fontSize: 34,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-
-          const SizedBox(height: 8),
-
-          Text(
-            "Acompanhamento do puerpério",
-            textAlign: TextAlign.center,
+            "$rotulo: ",
             style: TextStyle(
-              color: vinho.withOpacity(0.75),
-              fontSize: 17,
+              color: vinho.withOpacity(0.65),
+              fontSize: 14,
             ),
           ),
-
-          const SizedBox(height: 18),
-
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-            decoration: BoxDecoration(
-              color: rosaClaro.withOpacity(0.45),
-              borderRadius: BorderRadius.circular(24),
-            ),
+          Expanded(
             child: Text(
-              semanaController.text.trim().isEmpty
-                  ? "Semana não informada"
-                  : semanaController.text.trim(),
+              valor,
               style: TextStyle(
                 color: vinho,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+                fontSize: 14.5,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget blocoInformacoes({
-    required IconData icone,
-    required String titulo,
-    required Widget child,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: vinho.withOpacity(0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 66,
-                height: 66,
-                decoration: BoxDecoration(
-                  color: rosaClaro.withOpacity(0.45),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Icon(
-                  icone,
-                  color: vinho,
-                  size: 34,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  titulo,
-                  style: TextStyle(
-                    color: vinho,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          child,
-        ],
-      ),
-    );
-  }
-
-  Widget campoEditavel({
-    required String label,
-    required TextEditingController controller,
-    required IconData icone,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return TextField(
-      controller: controller,
-      readOnly: !editando,
-      keyboardType: keyboardType,
-      onChanged: (_) {
-        if (editando) {
-          setState(() {});
-        }
-      },
-      style: TextStyle(
-        color: editando ? Colors.black87 : vinho.withOpacity(0.70),
-        fontSize: 16,
-        height: 1.3,
-      ),
-      decoration: InputDecoration(
-        labelText: label,
-        labelStyle: TextStyle(
-          color: vinho,
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-        ),
-        prefixIcon: Icon(
-          icone,
-          color: vinho,
-          size: 28,
-        ),
-        filled: true,
-        fillColor: editando
-            ? Colors.white.withOpacity(0.95)
-            : rosaClaro.withOpacity(0.30),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
-          borderSide: BorderSide(
-            color: editando
-                ? vinho.withOpacity(0.65)
-                : rosaMedio.withOpacity(0.30),
-            width: editando ? 1.5 : 1,
-          ),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
-          borderSide: BorderSide(
-            color: vinho,
-            width: 2,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget blocoConfiguracoes() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.88),
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: vinho.withOpacity(0.08),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 66,
-                height: 66,
-                decoration: BoxDecoration(
-                  color: rosaClaro.withOpacity(0.45),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Icon(
-                  Icons.settings_outlined,
-                  color: vinho,
-                  size: 34,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  "Configurações",
-                  style: TextStyle(
-                    color: vinho,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 18),
-
-          itemConfiguracao(
-            titulo: "Notificações",
-            subtitulo: "Alertas e lembretes ativados",
-            valor: notificacoesAtivas,
-            aoMudar: (valor) {
-              setState(() {
-                notificacoesAtivas = valor;
-              });
-            },
-          ),
-
-          Divider(
-            height: 26,
-            color: rosaMedio.withOpacity(0.25),
-          ),
-
-          itemConfiguracao(
-            titulo: "Lembrete do check-in",
-            subtitulo: "Receber aviso para preencher o check-in diário",
-            valor: lembreteCheckin,
-            aoMudar: (valor) {
-              setState(() {
-                lembreteCheckin = valor;
-              });
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget itemConfiguracao({
-    required String titulo,
-    required String subtitulo,
-    required bool valor,
-    required ValueChanged<bool> aoMudar,
-  }) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                titulo,
-                style: TextStyle(
-                  color: vinho,
-                  fontSize: 17,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitulo,
-                style: TextStyle(
-                  color: vinho.withOpacity(0.65),
-                  fontSize: 14,
-                  height: 1.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Switch(
-          value: valor,
-          onChanged: aoMudar,
-          activeColor: Colors.white,
-          activeTrackColor: vinho,
-          inactiveThumbColor: Colors.white,
-          inactiveTrackColor: Colors.grey.shade300,
-        ),
-      ],
-    );
-  }
-
-  Widget botaoSair() {
-    return SizedBox(
-      width: double.infinity,
-      height: 58,
-      child: OutlinedButton.icon(
-        onPressed: () {
-          Navigator.pushNamedAndRemoveUntil(
-            context,
-            '/login',
-            (route) => false,
-          );
-        },
-        icon: const Icon(Icons.logout),
-        label: const Text(
-          "SAIR DA CONTA",
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 0.8,
-          ),
-        ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: Colors.red.shade500,
-          side: BorderSide(
-            color: Colors.red.shade400,
-            width: 1.8,
-          ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30),
-          ),
-        ),
       ),
     );
   }

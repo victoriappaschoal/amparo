@@ -11,7 +11,7 @@ def test_paciente_sem_vinculo_nao_envia_e_le_vazio(client):
 
     assert client.get("/messages", headers=auth(tk)).json() == []
     resp = client.post(
-        "/messages", json={"content": "ola"}, headers=auth(tk)
+        "/messages", json={"content": "olá"}, headers=auth(tk)
     )
     assert resp.status_code == 400
 
@@ -20,24 +20,24 @@ def test_conversa_ida_e_volta(client):
     tk_pac, tk_med, patient_id, _ = _fluxo_admin_aprova_e_vincula(client)
 
     r = client.post(
-        "/messages", json={"content": "Ola, doutora!"}, headers=auth(tk_pac)
+        "/messages", json={"content": "Olá, doutora!"}, headers=auth(tk_pac)
     )
     assert r.status_code == 201 and r.json()["sender_role"] == "patient"
 
     r = client.post(
         f"/messages/patient/{patient_id}",
-        json={"content": "Ola! Como voce esta?"},
+        json={"content": "Olá! Como você está?"},
         headers=auth(tk_med),
     )
     assert r.status_code == 201 and r.json()["sender_role"] == "doctor"
 
-    # Ambos veem a mesma conversa, em ordem cronologica
+    # Ambos veem a mesma conversa, em ordem cronológica
     do_lado_da_paciente = client.get("/messages", headers=auth(tk_pac)).json()
     do_lado_da_medica = client.get(
         f"/messages/patient/{patient_id}", headers=auth(tk_med)
     ).json()
     assert [m["content"] for m in do_lado_da_paciente] == [
-        "Ola, doutora!", "Ola! Como voce esta?",
+        "Olá, doutora!", "Olá! Como você está?",
     ]
     assert do_lado_da_paciente == do_lado_da_medica
 

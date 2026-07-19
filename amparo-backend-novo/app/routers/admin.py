@@ -16,7 +16,9 @@ Mais listagens de apoio para a operação:
 O admin em si é criado pelo script scripts/create_admin.py (não existe
 cadastro público de admin, de propósito).
 """
+import secrets
 import uuid
+from datetime import datetime, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -24,9 +26,10 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.deps import get_current_admin
-from app.models import PatientProfile, DoctorProfile, User
+from app.models import PatientProfile, DoctorProfile, User, _LINK_CODE_ALFABETO
 from app.schemas import (
     DoctorAssignRequest, AdminPatientListItem, DoctorProfileOut, PatientProfileOut,
+    AdminResetCodeOut,
 )
 
 def _uuid_ou_404(valor: Optional[str], recurso: str) -> Optional[str]:
@@ -130,3 +133,24 @@ def assign_doctor_to_patient(
     db.commit()
     db.refresh(patient)
     return patient
+
+@router.post("/users/{username}/reset-code", response_model=AdminResetCodeOut)
+def gerar_codigo_redefinicao(username: str, db: Session = Depends(get_db)):
+    """
+    Gera um código temporário (30 min) para o usuário trocar a própria senha
+    em "Esqueci minha senha". O código é mostrado UMA vez ao admin, que o
+    repassa à pessoa por um canal seguro; no banco fica apenas o hash.
+    """
+    from app.security import hash_password
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Usuário não encontrado")
+
+    codigo = "".join(secrets.choice(_LINK_CODE_ALFABETO) for _ in range(8))
+    user.reset_code_hash = hash_password(codigo)
+    user.reset_code_expires_at = datetime.utcnow() + timedelta(minutes=30)
+    db.commit()
+
+    return AdminResetCodeOut(code=codigo, expires_at=user.reset_code_expires_at)
+

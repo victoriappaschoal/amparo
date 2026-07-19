@@ -7,7 +7,6 @@ import 'cadastro/cadastro_paciente_page.dart';
 import 'cadastro/cadastro_profissional_page.dart';
 
 import 'paciente/home_paciente_page.dart';
-import 'paciente/profissionais_paciente_page.dart';
 
 import 'profissional/home_profissional_page.dart';
 import 'profissional/agenda_profissional_page.dart';
@@ -40,7 +39,6 @@ class MeuApp extends StatelessWidget {
         '/cadastro-profissional': (context) => const CadastroProfissionalPage(),
 
         '/home-paciente': (context) => const HomePacientePage(),
-        '/profissionais-paciente': (context) => const ProfissionaisPacientePage(),
 
         '/home-profissional': (context) => const HomeProfissionalPage(),
         '/agenda-profissional': (context) => const AgendaProfissionalPage(),

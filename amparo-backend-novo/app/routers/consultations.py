@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -30,13 +30,20 @@ def schedule_consultation(
             status.HTTP_400_BAD_REQUEST,
             "Você ainda não está vinculada a um profissional. Fale com a recepção.",
         )
-    if payload.scheduled_at <= datetime.utcnow():
+    # O app envia o horário em UTC com fuso ("...Z"); normalizamos para
+    # UTC "ingênuo", que é como o banco guarda — sem isso a comparação
+    # aware vs naive estoura erro 500.
+    quando = payload.scheduled_at
+    if quando.tzinfo is not None:
+        quando = quando.astimezone(timezone.utc).replace(tzinfo=None)
+
+    if quando <= datetime.utcnow():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A consulta deve ser marcada para uma data futura")
 
     consultation = Consultation(
         patient_id=patient.id,
         doctor_id=patient.doctor_id,
-        scheduled_at=payload.scheduled_at,
+        scheduled_at=quando,
     )
     db.add(consultation)
     db.commit()

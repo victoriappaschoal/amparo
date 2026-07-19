@@ -198,3 +198,15 @@ def test_paciente_vinculada_agenda_e_cancela(client):
     )
     assert resp.status_code == 200
     assert resp.json()["status"] == "cancelled"
+
+
+def test_agendamento_com_horario_em_utc_com_fuso(client):
+    """Regressao: o app envia scheduled_at com 'Z' (UTC aware); o backend
+    nao pode estourar 500 na comparacao com o relogio naive."""
+    tk_pac, _, _, _ = _fluxo_admin_aprova_e_vincula(client)
+    r = client.post(
+        "/consultations",
+        json={"scheduled_at": "2030-01-15T14:00:00Z"},
+        headers=auth(tk_pac),
+    )
+    assert r.status_code == 201, r.text

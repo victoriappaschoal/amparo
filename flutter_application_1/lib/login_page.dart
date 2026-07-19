@@ -4,6 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'models/paciente_model.dart';
 import 'services/api_service.dart';
 import 'services/sessao_usuario.dart';
+import 'admin/admin_page.dart';
+import 'paciente/vincular_profissional_page.dart';
+import 'redefinir_senha_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -63,6 +66,19 @@ class _LoginPageState extends State<LoginPage> {
 
         if (!mounted) return;
 
+        // Primeiro acesso sem profissional vinculado: oferece o vínculo
+        // por código antes de entrar na home.
+        if (dadosPaciente['doctor_id'] == null) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const VincularProfissionalPage(),
+            ),
+            (route) => false,
+          );
+          return;
+        }
+
         Navigator.pushReplacementNamed(context, '/home-paciente');
         return;
       } catch (_) {
@@ -75,6 +91,21 @@ class _LoginPageState extends State<LoginPage> {
         if (!mounted) return;
 
         Navigator.pushReplacementNamed(context, '/home-profissional');
+        return;
+      } catch (_) {
+        // Não é paciente nem profissional: pode ser admin.
+      }
+
+      try {
+        await api.getAdminPatients(); // só o admin tem acesso (403 p/ demais)
+
+        if (!mounted) return;
+
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const AdminPage()),
+          (route) => false,
+        );
         return;
       } catch (_) {
         await api.logout();
@@ -236,6 +267,28 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
+  Widget linkEsqueciSenha() {
+    return TextButton(
+      onPressed: carregando
+          ? null
+          : () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const RedefinirSenhaPage(),
+                ),
+              );
+            },
+      child: Text(
+        "Esqueci minha senha",
+        style: TextStyle(
+          color: vinho.withOpacity(0.75),
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final alturaTela = MediaQuery.of(context).size.height;
@@ -312,6 +365,7 @@ class _LoginPageState extends State<LoginPage> {
                     const SizedBox(height: 10),
 
                     linkCadastro(),
+              linkEsqueciSenha(),
 
                     const SizedBox(height: 20),
                   ],

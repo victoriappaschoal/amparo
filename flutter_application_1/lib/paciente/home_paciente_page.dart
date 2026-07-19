@@ -9,8 +9,6 @@ import 'checkin_diario_page.dart';
 import 'agenda_paciente_page.dart';
 import 'amamentacao_page.dart';
 import 'perfil_paciente_page.dart';
-import 'profissionais_paciente_page.dart';
-import 'teleconsultas_page.dart';
 import '../services/sessao_usuario.dart';
 
 class HomePacientePage extends StatelessWidget {
@@ -33,12 +31,8 @@ class HomePacientePage extends StatelessWidget {
     if (index == 0) return;
 
     if (index == 1) {
-      abrirTela(context, const ProfissionaisPacientePage());
-    } else if (index == 2) {
       abrirTela(context, const AgendaPacientePage());
-    } else if (index == 3) {
-      abrirTela(context, const TeleconsultasPage());
-    } else if (index == 4) {
+    } else if (index == 2) {
       abrirTela(context, const PerfilPacientePage());
     }
   }
@@ -124,30 +118,30 @@ class HomePacientePage extends StatelessWidget {
   }) {
     return Material(
       color: Colors.white.withOpacity(0.88),
-      borderRadius: BorderRadius.circular(26),
-      elevation: 3,
+      borderRadius: BorderRadius.circular(20),
+      elevation: 2,
       shadowColor: vinho.withOpacity(0.10),
       child: InkWell(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(20),
         onTap: () {
           abrirTela(context, tela);
         },
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(13),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 58,
-                height: 58,
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
                   color: rosaMedio.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(13),
                 ),
                 child: Icon(
                   icone,
                   color: vinho,
-                  size: 31,
+                  size: 23,
                 ),
               ),
 
@@ -159,7 +153,7 @@ class HomePacientePage extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: vinho,
-                  fontSize: 16,
+                  fontSize: 14.5,
                   fontWeight: FontWeight.bold,
                   height: 1.10,
                 ),
@@ -173,7 +167,7 @@ class HomePacientePage extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: vinho.withOpacity(0.65),
-                  fontSize: 14,
+                  fontSize: 12,
                   height: 1.25,
                 ),
               ),
@@ -189,9 +183,9 @@ class HomePacientePage extends StatelessWidget {
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 18,
-      mainAxisSpacing: 18,
-      childAspectRatio: 0.8,
+      crossAxisSpacing: 14,
+      mainAxisSpacing: 14,
+      childAspectRatio: 1.25,
       children: [
         cardAcessoRapido(
           context: context,
@@ -211,7 +205,7 @@ class HomePacientePage extends StatelessWidget {
           context: context,
           icone: Icons.menu_book_outlined,
           titulo: "Blog",
-          subtitulo: "Conteúdos e Imformações",
+          subtitulo: "Conteúdos e informações",
           tela: const BlogPage(),
         ),
         cardAcessoRapido(
@@ -339,16 +333,8 @@ class HomePacientePage extends StatelessWidget {
             label: "Home",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            label: "Profissionais",
-          ),
-          BottomNavigationBarItem(
             icon: Icon(Icons.calendar_month_outlined),
             label: "Agenda",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.video_call_outlined),
-            label: "Tele",
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

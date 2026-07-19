@@ -156,6 +156,9 @@ class ApiService {
     String? babyName,
     required bool isBreastfeeding,
     String? phone,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
+    String? emergencyContactRelationship,
   }) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/register/patient'),
@@ -172,6 +175,9 @@ class ApiService {
         'baby_name': babyName,
         'is_breastfeeding': isBreastfeeding,
         'phone': phone,
+        'emergency_contact_name': emergencyContactName,
+        'emergency_contact_phone': emergencyContactPhone,
+        'emergency_contact_relationship': emergencyContactRelationship,
       }),
     );
 
@@ -492,12 +498,21 @@ class ApiService {
     String? babyName,
     bool? isBreastfeeding,
     String? phone,
+    String? emergencyContactName,
+    String? emergencyContactPhone,
+    String? emergencyContactRelationship,
   }) async {
     final response = await _authorizedRequest('PUT', '/profile/patient/me', body: {
       if (fullName != null) 'full_name': fullName,
       if (babyName != null) 'baby_name': babyName,
       if (isBreastfeeding != null) 'is_breastfeeding': isBreastfeeding,
       if (phone != null) 'phone': phone,
+      if (emergencyContactName != null)
+        'emergency_contact_name': emergencyContactName,
+      if (emergencyContactPhone != null)
+        'emergency_contact_phone': emergencyContactPhone,
+      if (emergencyContactRelationship != null)
+        'emergency_contact_relationship': emergencyContactRelationship,
     });
     if (response.statusCode != 200) {
       throw ApiException(response.statusCode, _extractErrorMessage(response));
@@ -569,6 +584,99 @@ class ApiService {
       body: {'content': content},
     );
     if (response.statusCode != 201) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  // ---------------- Vínculo por código ----------------
+
+  /// A paciente digita o código compartilhado pelo profissional.
+  /// Erros do backend (código inexistente, profissional não verificado)
+  /// chegam como ApiException com mensagem pronta para a tela.
+  Future<void> linkDoctorByCode(String code) async {
+    final response =
+        await _authorizedRequest('POST', '/profile/patient/link-doctor', body: {
+      'code': code.trim().toUpperCase(),
+    });
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  // ---------------- Administração ----------------
+  // Rotas restritas ao papel admin (403 para os demais). O admin é criado
+  // pelo script scripts/create_admin.py no backend.
+
+  /// Lista profissionais. verified=false -> só os pendentes de aprovação.
+  Future<List<Map<String, dynamic>>> getAdminProfessionals({bool? verified}) async {
+    final sufixo = verified == null ? '' : '?verified=$verified';
+    final response =
+        await _authorizedRequest('GET', '/admin/professionals$sufixo');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  /// Aprova o registro profissional (CRM/CRP conferido).
+  Future<void> verifyProfessional(String doctorId) async {
+    final response = await _authorizedRequest(
+        'PATCH', '/admin/professionals/$doctorId/verify');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// Lista todas as pacientes: {id, full_name, email, doctor_id}.
+  Future<List<Map<String, dynamic>>> getAdminPatients() async {
+    final response = await _authorizedRequest('GET', '/admin/patients');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return List<Map<String, dynamic>>.from(jsonDecode(response.body));
+  }
+
+  /// Vincula (ou desvincula, com doctorId=null) a paciente a um profissional.
+  Future<void> assignDoctorToPatient(String patientId, String? doctorId) async {
+    final response = await _authorizedRequest(
+      'PUT',
+      '/admin/patients/$patientId/doctor',
+      body: {'doctor_id': doctorId},
+    );
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  // ---------------- Redefinição de senha ----------------
+
+  /// (Admin) Gera código temporário de 30 min para o usuário trocar a senha.
+  /// Retorna {code, expires_at} — o código é exibido UMA vez.
+  Future<Map<String, dynamic>> adminGenerateResetCode(String username) async {
+    final response =
+        await _authorizedRequest('POST', '/admin/users/$username/reset-code');
+    if (response.statusCode != 200) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+    return jsonDecode(response.body);
+  }
+
+  /// Troca a senha com o código temporário (rota pública, sem login).
+  Future<void> resetPassword({
+    required String username,
+    required String code,
+    required String newPassword,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/reset-password'),
+      headers: _jsonHeaders(),
+      body: jsonEncode({
+        'username': username.trim(),
+        'code': code.trim().toUpperCase(),
+        'new_password': newPassword,
+      }),
+    );
+    if (response.statusCode != 200) {
       throw ApiException(response.statusCode, _extractErrorMessage(response));
     }
   }

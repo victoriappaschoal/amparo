@@ -21,6 +21,12 @@ class _CadastroPacientePageState extends State<CadastroPacientePage> {
       TextEditingController();
   final TextEditingController _dataBebeController = TextEditingController();
   final TextEditingController _telefoneController = TextEditingController();
+  final TextEditingController _emergenciaNomeController =
+      TextEditingController();
+  final TextEditingController _emergenciaTelefoneController =
+      TextEditingController();
+  final TextEditingController _emergenciaParentescoController =
+      TextEditingController();
 
   final Color vinho = const Color(0xFF87364E);
   final Color rosaClaro = const Color(0xFFF8CCD2);
@@ -185,6 +191,17 @@ class _CadastroPacientePageState extends State<CadastroPacientePage> {
         babyName: null,
         isBreastfeeding: converterAmamentandoParaBackend(_amamentando!),
         phone: telefone.isEmpty ? null : telefone,
+        emergencyContactName: _emergenciaNomeController.text.trim().isEmpty
+            ? null
+            : _emergenciaNomeController.text.trim(),
+        emergencyContactPhone:
+            _emergenciaTelefoneController.text.trim().isEmpty
+                ? null
+                : _emergenciaTelefoneController.text.trim(),
+        emergencyContactRelationship:
+            _emergenciaParentescoController.text.trim().isEmpty
+                ? null
+                : _emergenciaParentescoController.text.trim(),
       );
 
       if (!mounted) return;
@@ -237,6 +254,9 @@ class _CadastroPacientePageState extends State<CadastroPacientePage> {
     _dataNascimentoController.dispose();
     _dataBebeController.dispose();
     _telefoneController.dispose();
+    _emergenciaNomeController.dispose();
+    _emergenciaTelefoneController.dispose();
+    _emergenciaParentescoController.dispose();
     super.dispose();
   }
 
@@ -599,6 +619,32 @@ class _CadastroPacientePageState extends State<CadastroPacientePage> {
                     controller: _telefoneController,
                     icone: Icons.phone_outlined,
                     tipoTeclado: TextInputType.phone,
+                  ),
+                ],
+              ),
+              blocoFormulario(
+                icone: Icons.contact_phone_outlined,
+                titulo: "Contato de emergência",
+                subtitulo:
+                    "Alguém de confiança para contatarmos se necessário.",
+                campos: [
+                  campoTexto(
+                    label: "Nome do contato",
+                    controller: _emergenciaNomeController,
+                    icone: Icons.person_outline,
+                  ),
+                  espacoCampo(),
+                  campoTexto(
+                    label: "Telefone do contato",
+                    controller: _emergenciaTelefoneController,
+                    icone: Icons.phone_outlined,
+                    tipoTeclado: TextInputType.phone,
+                  ),
+                  espacoCampo(),
+                  campoTexto(
+                    label: "Parentesco / ligação (ex.: mãe, companheiro)",
+                    controller: _emergenciaParentescoController,
+                    icone: Icons.family_restroom_outlined,
                   ),
                 ],
               ),

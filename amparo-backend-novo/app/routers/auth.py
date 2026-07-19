@@ -5,8 +5,11 @@ from slowapi.util import get_remote_address
 from jose import JWTError
 
 from app.database import get_db
-from app.models import User, UserRole, PatientProfile, DoctorProfile
+from app.models import User, UserRole, PatientProfile, DoctorProfile, gerar_link_code
+from datetime import datetime
+
 from app.schemas import (
+    ResetPasswordRequest,
     PatientRegister, ProfessionalRegister, UserLogin,
     TokenPair, RefreshRequest, UserOut,
 )
@@ -46,6 +49,9 @@ def register_patient(payload: PatientRegister, db: Session = Depends(get_db)):
         baby_name=payload.baby_name,
         is_breastfeeding=payload.is_breastfeeding,
         phone=payload.phone,
+        emergency_contact_name=payload.emergency_contact_name,
+        emergency_contact_phone=payload.emergency_contact_phone,
+        emergency_contact_relationship=payload.emergency_contact_relationship,
         # doctor_id fica em branco de propósito: vínculo é feito depois
         # pela recepção/admin, não no momento do cadastro.
     )
@@ -80,6 +86,7 @@ def register_professional(payload: ProfessionalRegister, db: Session = Depends(g
         phone=payload.phone,
         professional_bio=payload.professional_bio,
         is_verified=False,  # admin confere o CRM/CRP antes de liberar acesso pleno
+        link_code=gerar_link_code(db),
     )
     db.add(profile)
     db.commit()
@@ -119,3 +126,31 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
         access_token=create_token(user.id, user.role.value, "access"),
         refresh_token=create_token(user.id, user.role.value, "refresh"),
     )
+
+@router.post("/reset-password", status_code=status.HTTP_200_OK)
+@limiter.limit("5/minute")  # mesmo cuidado anti força bruta do login
+def reset_password(request: Request, payload: ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Troca a senha usando o código temporário gerado pela administração.
+    Mensagem de erro única de propósito: não revela se o usuário existe,
+    se o código está errado ou vencido.
+    """
+    erro = HTTPException(
+        status.HTTP_400_BAD_REQUEST,
+        "Código inválido ou vencido. Peça um novo à administração.",
+    )
+
+    user = db.query(User).filter(User.username == payload.username).first()
+    if not user or not user.reset_code_hash or not user.reset_code_expires_at:
+        raise erro
+    if user.reset_code_expires_at < datetime.utcnow():
+        raise erro
+    if not verify_password(payload.code.strip().upper(), user.reset_code_hash):
+        raise erro
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.reset_code_hash = None
+    user.reset_code_expires_at = None
+    db.commit()
+    return {"detail": "Senha redefinida com sucesso"}
+
