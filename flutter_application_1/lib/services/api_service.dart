@@ -35,7 +35,7 @@ class ApiService {
   // - Simulador iOS:         http://localhost:8000
   // - Celular físico (Wi-Fi): http://SEU_IP_LOCAL:8000  (ex: http://192.168.0.15:8000)
   // - Produção:              https://api.seudominio.com
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'http://192.168.15.28:8000';
 
   final _storage = const FlutterSecureStorage();
 
@@ -656,11 +656,13 @@ class ApiService {
     required String title,
     required String content,
     String? category,
+    String? imageFileId,
   }) async {
     final response = await _authorizedRequest('PUT', '/blog/$articleId', body: {
       'title': title,
       'content': content,
       'category': category,
+      if (imageFileId != null) 'image_file_id': imageFileId,
     });
     if (response.statusCode != 200) {
       throw ApiException(response.statusCode, _extractErrorMessage(response));
@@ -670,6 +672,24 @@ class ApiService {
   /// (Admin) Exclui um artigo do blog.
   Future<void> deleteBlogArticle(String articleId) async {
     final response = await _authorizedRequest('DELETE', '/blog/$articleId');
+    if (response.statusCode != 204) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// (Admin) Exclui uma paciente e todos os seus dados. Irreversível.
+  Future<void> adminDeletePatient(String patientId) async {
+    final response =
+        await _authorizedRequest('DELETE', '/admin/patients/$patientId');
+    if (response.statusCode != 204) {
+      throw ApiException(response.statusCode, _extractErrorMessage(response));
+    }
+  }
+
+  /// (Admin) Exclui um profissional (as pacientes são desvinculadas).
+  Future<void> adminDeleteProfessional(String doctorId) async {
+    final response =
+        await _authorizedRequest('DELETE', '/admin/professionals/$doctorId');
     if (response.statusCode != 204) {
       throw ApiException(response.statusCode, _extractErrorMessage(response));
     }
@@ -757,12 +777,14 @@ class ApiService {
     required String title,
     required String content,
     String? category,
+    String? imageFileId,
   }) async {
     final response = await _authorizedRequest('POST', '/blog', body: {
       'title': title,
       'content': content,
       'category': category,
       'published': true,
+      'image_file_id': imageFileId,
     });
     if (response.statusCode != 201) {
       throw ApiException(response.statusCode, _extractErrorMessage(response));

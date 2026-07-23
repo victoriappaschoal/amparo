@@ -351,19 +351,39 @@ class _BlogPageState extends State<BlogPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 62,
-                height: 62,
-                decoration: BoxDecoration(
-                  color: rosaMedio.withOpacity(0.22),
-                  borderRadius: BorderRadius.circular(19),
-                ),
-                child: Icon(
-                  Icons.article_outlined,
-                  color: vinho,
-                  size: 32,
-                ),
-              ),
+              artigo.imageFileId == null
+                  ? Container(
+                      width: 62,
+                      height: 62,
+                      decoration: BoxDecoration(
+                        color: rosaMedio.withOpacity(0.22),
+                        borderRadius: BorderRadius.circular(19),
+                      ),
+                      child: Icon(
+                        Icons.article_outlined,
+                        color: vinho,
+                        size: 32,
+                      ),
+                    )
+                  : ClipRRect(
+                      borderRadius: BorderRadius.circular(19),
+                      child: SizedBox(
+                        width: 62,
+                        height: 62,
+                        child: FutureBuilder(
+                          future: ApiService()
+                              .downloadFileBytes(artigo.imageFileId!),
+                          builder: (context, snapshot) => snapshot.hasData
+                              ? Image.memory(
+                                  snapshot.data!,
+                                  fit: BoxFit.cover,
+                                )
+                              : Container(
+                                  color: rosaMedio.withOpacity(0.22),
+                                ),
+                        ),
+                      ),
+                    ),
               const SizedBox(width: 15),
               Expanded(
                 child: Column(
@@ -451,6 +471,7 @@ class ArtigoBlog {
   final int tempoLeituraMinutos;
   final DateTime? publicadoEm;
   final String? imagemUrl;
+  final String? imageFileId;
 
   const ArtigoBlog({
     required this.id,
@@ -461,6 +482,7 @@ class ArtigoBlog {
     required this.tempoLeituraMinutos,
     this.publicadoEm,
     this.imagemUrl,
+    this.imageFileId,
   });
 
   /// Constrói a partir do JSON do backend (GET /blog).
@@ -481,6 +503,7 @@ class ArtigoBlog {
       tempoLeituraMinutos: minutos,
       publicadoEm: DateTime.tryParse((json['created_at'] ?? '').toString()),
       imagemUrl: null,
+      imageFileId: json['image_file_id']?.toString(),
     );
   }
 
@@ -552,6 +575,24 @@ class DetalheArtigoPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
+            if (artigo.imageFileId != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: FutureBuilder(
+                  future:
+                      ApiService().downloadFileBytes(artigo.imageFileId!),
+                  builder: (context, snapshot) => snapshot.hasData
+                      ? Image.memory(
+                          snapshot.data!,
+                          width: double.infinity,
+                          height: 200,
+                          fit: BoxFit.cover,
+                        )
+                      : const SizedBox(height: 0),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),

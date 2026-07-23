@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.flutter_application_1"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -42,4 +42,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+subprojects {
+    fun forcarSdk36() {
+        extensions.findByName("android")?.let { ext ->
+            if (ext is com.android.build.gradle.LibraryExtension) {
+                ext.compileSdk = 36
+            }
+        }
+    }
+    if (state.executed) forcarSdk36() else afterEvaluate { forcarSdk36() }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
 import 'horarios_atendimento_page.dart';
@@ -26,6 +26,7 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
 
   bool _carregando = true;
   bool _salvando = false;
+  bool _editando = false;
   String? _erro;
 
   Map<String, dynamic> _perfil = {};
@@ -107,6 +108,7 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Dados atualizados com sucesso!")),
       );
+      setState(() => _editando = false);
       _carregar();
     } on ApiException catch (erro) {
       if (!mounted) return;
@@ -119,12 +121,18 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
   }
 
   Future<void> _alterarFoto() async {
-    final resultado = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
+    final selecionada =
+        await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (selecionada == null) return;
+    final bytesSelecionados = await selecionada.readAsBytes();
+    final arquivo = (
+      name: selecionada.name,
+      bytes: bytesSelecionados,
+      size: bytesSelecionados.length,
+      extension: selecionada.name.contains('.')
+          ? selecionada.name.split('.').last
+          : 'jpg',
     );
-    final arquivo = resultado?.files.single;
-    if (arquivo == null || arquivo.bytes == null) return;
     if (arquivo.size > 5 * 1024 * 1024) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -132,7 +140,7 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
       );
       return;
     }
-    final extensao = (arquivo.extension ?? 'jpg').toLowerCase();
+    final extensao = arquivo.extension.toLowerCase();
     final mime = extensao == 'png'
         ? 'image/png'
         : extensao == 'webp'
@@ -140,7 +148,7 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
             : 'image/jpeg';
     try {
       final fileId = await _api.uploadFile(
-        bytes: arquivo.bytes!,
+        bytes: arquivo.bytes,
         filename: arquivo.name,
         mimeType: mime,
       );
@@ -321,22 +329,26 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
           ],
           const SizedBox(height: 20),
           TextField(
+            enabled: _editando,
             controller: _nomeController,
             decoration: _decoracao("Nome completo"),
           ),
           const SizedBox(height: 14),
           TextField(
+            enabled: _editando,
             controller: _especialidadeController,
             decoration: _decoracao("Especialidade"),
           ),
           const SizedBox(height: 14),
           TextField(
+            enabled: _editando,
             controller: _telefoneController,
             keyboardType: TextInputType.phone,
             decoration: _decoracao("Telefone"),
           ),
           const SizedBox(height: 14),
           TextField(
+            enabled: _editando,
             controller: _bioController,
             maxLines: 3,
             decoration: _decoracao("Apresentação (bio)"),
@@ -344,7 +356,9 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
           const SizedBox(height: 6),
           SwitchListTile(
             value: _teleconsulta,
-            onChanged: (valor) => setState(() => _teleconsulta = valor),
+            onChanged: _editando
+                ? (valor) => setState(() => _teleconsulta = valor)
+                : null,
             activeColor: vinho,
             title: Text(
               "Atendo por teleconsulta",
@@ -354,16 +368,13 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
           const SizedBox(height: 16),
           SizedBox(
             height: 54,
-            child: ElevatedButton(
-              onPressed: _salvando ? null : _salvar,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: vinho,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(27),
-                ),
-              ),
-              child: _salvando
+            child: ElevatedButton.icon(
+              onPressed: _salvando
+                  ? null
+                  : _editando
+                      ? _salvar
+                      : () => setState(() => _editando = true),
+              icon: _salvando
                   ? const SizedBox(
                       width: 22,
                       height: 22,
@@ -372,16 +383,37 @@ class _PerfilProfissionalPageState extends State<PerfilProfissionalPage> {
                         strokeWidth: 2.5,
                       ),
                     )
-                  : const Text(
-                      "SALVAR ALTERAÇÕES",
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
+                  : Icon(_editando ? Icons.check : Icons.edit_outlined),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: vinho,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(27),
+                ),
+              ),
+              label: Text(
+                _editando ? "SALVAR ALTERAÇÕES" : "EDITAR DADOS",
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.8,
+                ),
+              ),
             ),
           ),
+          if (_editando)
+            TextButton(
+              onPressed: _salvando
+                  ? null
+                  : () {
+                      setState(() => _editando = false);
+                      _carregar(); // descarta as mudanças não salvas
+                    },
+              child: Text(
+                "Cancelar edição",
+                style: TextStyle(color: vinho.withOpacity(0.7)),
+              ),
+            ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: () {

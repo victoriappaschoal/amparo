@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
 
@@ -169,6 +170,137 @@ class _AdminPageState extends State<AdminPage>
     );
   }
 
+  Future<bool> _confirmarExclusao(String descricao) async {
+    final controller = TextEditingController();
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Exclusão definitiva"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(descricao),
+            const SizedBox(height: 12),
+            const Text(
+              "Esta ação NÃO pode ser desfeita. Para confirmar, digite "
+              "EXCLUIR no campo abaixo:",
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: "EXCLUIR",
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancelar"),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, controller.text.trim() == "EXCLUIR"),
+            child: const Text("Excluir", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+    return confirmado == true;
+  }
+
+  Future<void> _excluirPaciente(Map<String, dynamic> paciente) async {
+    final ok = await _confirmarExclusao(
+      "Excluir a paciente \"${paciente['full_name']}\" apaga TODOS os "
+      "registros dela: diários, avaliações, consultas, mensagens e arquivos.",
+    );
+    if (!ok) return;
+    try {
+      await _api.adminDeletePatient(paciente['id'].toString());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Paciente excluída.")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    }
+  }
+
+  Future<void> _excluirProfissional(Map<String, dynamic> prof) async {
+    final ok = await _confirmarExclusao(
+      "Excluir o(a) profissional \"${_nomeDoProfissional(prof)}\"? As "
+      "pacientes vinculadas serão desvinculadas (não excluídas) e as "
+      "conversas e consultas dele(a) serão removidas.",
+    );
+    if (!ok) return;
+    try {
+      await _api.adminDeleteProfessional(prof['id'].toString());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Profissional excluído.")),
+      );
+      _carregar();
+    } on ApiException catch (erro) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro.message)),
+      );
+    }
+  }
+
+  Future<String?> _escolherEnviarImagem() async {
+    final selecionada =
+        await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (selecionada == null) return null;
+    final bytesSelecionados = await selecionada.readAsBytes();
+    final arquivo = (
+      name: selecionada.name,
+      bytes: bytesSelecionados,
+      size: bytesSelecionados.length,
+      extension: selecionada.name.contains('.')
+          ? selecionada.name.split('.').last
+          : 'jpg',
+    );
+    if (arquivo.size > 5 * 1024 * 1024) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Imagem muito grande (máximo 5 MB).")),
+        );
+      }
+      return null;
+    }
+    final extensao = arquivo.extension.toLowerCase();
+    final mime = extensao == 'png'
+        ? 'image/png'
+        : extensao == 'webp'
+            ? 'image/webp'
+            : 'image/jpeg';
+    try {
+      return await _api.uploadFile(
+        bytes: arquivo.bytes,
+        filename: arquivo.name,
+        mimeType: mime,
+      );
+    } on ApiException catch (erro) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(erro.message)),
+        );
+      }
+      return null;
+    }
+  }
+
   Future<void> _abrirArtigo(Map<String, dynamic> artigo) async {
     final acao = await showDialog<String>(
       context: context,
@@ -233,6 +365,7 @@ class _AdminPageState extends State<AdminPage>
     final conteudoController =
         TextEditingController(text: (artigo['content'] ?? '').toString());
 
+    String? novaImagemFileId;
     final confirmado = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -261,6 +394,30 @@ class _AdminPageState extends State<AdminPage>
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 10),
+              StatefulBuilder(
+                builder: (context, setStateDialog) => OutlinedButton.icon(
+                  onPressed: () async {
+                    final id = await _escolherEnviarImagem();
+                    if (id != null) {
+                      setStateDialog(() => novaImagemFileId = id);
+                    }
+                  },
+                  icon: Icon(
+                    novaImagemFileId == null
+                        ? Icons.image_outlined
+                        : Icons.check_circle_outline,
+                    color: novaImagemFileId == null ? null : Colors.green,
+                  ),
+                  label: Text(
+                    novaImagemFileId == null
+                        ? (artigo['image_file_id'] == null
+                            ? "Adicionar imagem de capa"
+                            : "Trocar imagem de capa")
+                        : "Nova imagem anexada!",
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -286,6 +443,7 @@ class _AdminPageState extends State<AdminPage>
         category: categoriaController.text.trim().isEmpty
             ? null
             : categoriaController.text.trim(),
+        imageFileId: novaImagemFileId,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -341,6 +499,7 @@ class _AdminPageState extends State<AdminPage>
     final tituloController = TextEditingController();
     final categoriaController = TextEditingController();
     final conteudoController = TextEditingController();
+    String? imagemFileId;
 
     final confirmado = await showDialog<bool>(
       context: context,
@@ -370,6 +529,28 @@ class _AdminPageState extends State<AdminPage>
                   labelText: "Conteúdo",
                   alignLabelWithHint: true,
                   border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              StatefulBuilder(
+                builder: (context, setStateDialog) => OutlinedButton.icon(
+                  onPressed: () async {
+                    final id = await _escolherEnviarImagem();
+                    if (id != null) {
+                      setStateDialog(() => imagemFileId = id);
+                    }
+                  },
+                  icon: Icon(
+                    imagemFileId == null
+                        ? Icons.image_outlined
+                        : Icons.check_circle_outline,
+                    color: imagemFileId == null ? null : Colors.green,
+                  ),
+                  label: Text(
+                    imagemFileId == null
+                        ? "Adicionar imagem de capa (opcional)"
+                        : "Imagem anexada!",
+                  ),
                 ),
               ),
             ],
@@ -405,6 +586,7 @@ class _AdminPageState extends State<AdminPage>
         category: categoriaController.text.trim().isEmpty
             ? null
             : categoriaController.text.trim(),
+        imageFileId: imagemFileId,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -828,6 +1010,11 @@ class _AdminPageState extends State<AdminPage>
             )
           else
             Icon(Icons.verified_outlined, color: Colors.green.shade600),
+          IconButton(
+            tooltip: "Excluir profissional",
+            onPressed: () => _excluirProfissional(prof),
+            icon: Icon(Icons.delete_outline, color: Colors.red.shade300),
+          ),
         ],
       ),
     );
@@ -878,7 +1065,17 @@ class _AdminPageState extends State<AdminPage>
                 fontSize: 13,
               ),
             ),
-            trailing: Icon(Icons.link, color: vinho),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.link, color: vinho),
+                IconButton(
+                  tooltip: "Excluir paciente",
+                  onPressed: () => _excluirPaciente(paciente),
+                  icon: Icon(Icons.delete_outline, color: Colors.red.shade300),
+                ),
+              ],
+            ),
             onTap: () => _vincular(paciente),
           ),
         );

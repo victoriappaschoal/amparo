@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../services/api_service.dart';
+import 'blog_page.dart';
+
 class AmamentacaoPage extends StatefulWidget {
   const AmamentacaoPage({super.key});
 
@@ -20,6 +23,40 @@ class _AmamentacaoPageState extends State<AmamentacaoPage> {
   bool dificuldadePega = false;
   bool mamaCheia = false;
   bool bebeMamandoBem = false;
+
+  bool _carregandoArtigos = true;
+  List<ArtigoBlog> _artigos = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _carregarArtigos();
+  }
+
+  Future<void> _carregarArtigos() async {
+    try {
+      final resposta = await ApiService().getBlogArticles();
+      if (!mounted) return;
+      setState(() {
+        _artigos = [
+          for (var i = 0; i < resposta.length; i++)
+            if ((resposta[i]['category'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .contains('amament') ||
+                (resposta[i]['title'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .contains('amament'))
+              ArtigoBlog.fromJson(resposta[i], i),
+        ];
+        _carregandoArtigos = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _carregandoArtigos = false);
+    }
+  }
 
   void salvarRegistro() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -142,7 +179,9 @@ class _AmamentacaoPageState extends State<AmamentacaoPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
       backgroundColor: rosaClaro,
       appBar: AppBar(
         backgroundColor: rosaClaro,
@@ -156,9 +195,20 @@ class _AmamentacaoPageState extends State<AmamentacaoPage> {
           ),
         ),
         centerTitle: true,
+        bottom: TabBar(
+          labelColor: vinho,
+          unselectedLabelColor: vinho.withOpacity(0.5),
+          indicatorColor: vinho,
+          tabs: const [
+            Tab(text: "Registro do dia"),
+            Tab(text: "Artigos"),
+          ],
+        ),
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: TabBarView(
+          children: [
+            SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,7 +350,71 @@ class _AmamentacaoPageState extends State<AmamentacaoPage> {
             ],
           ),
         ),
+            _abaArtigos(),
+          ],
+        ),
       ),
+      ),
+    );
+  }
+
+  Widget _abaArtigos() {
+    if (_carregandoArtigos) {
+      return Center(child: CircularProgressIndicator(color: vinho));
+    }
+    if (_artigos.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Text(
+            "Nenhum artigo sobre amamentação publicado ainda.",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: vinho.withOpacity(0.7),
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(20),
+      itemCount: _artigos.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 12),
+      itemBuilder: (context, index) {
+        final artigo = _artigos[index];
+        return Material(
+          color: Colors.white.withOpacity(0.9),
+          borderRadius: BorderRadius.circular(18),
+          child: ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+            ),
+            leading: CircleAvatar(
+              backgroundColor: rosaMedio.withOpacity(0.25),
+              child: Icon(Icons.menu_book_outlined, color: vinho),
+            ),
+            title: Text(
+              artigo.titulo,
+              style: TextStyle(color: vinho, fontWeight: FontWeight.bold),
+            ),
+            subtitle: Text(
+              "${artigo.tempoLeituraMinutos} min de leitura",
+              style: TextStyle(color: vinho.withOpacity(0.6), fontSize: 12.5),
+            ),
+            trailing: Icon(Icons.chevron_right, color: vinho),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => DetalheArtigoPage(artigo: artigo),
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:file_picker/file_picker.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../services/api_service.dart';
 
@@ -115,12 +115,18 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> _anexarImagem() async {
-    final resultado = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-      withData: true,
+    final selecionada =
+        await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (selecionada == null) return;
+    final bytesSelecionados = await selecionada.readAsBytes();
+    final arquivo = (
+      name: selecionada.name,
+      bytes: bytesSelecionados,
+      size: bytesSelecionados.length,
+      extension: selecionada.name.contains('.')
+          ? selecionada.name.split('.').last
+          : 'jpg',
     );
-    final arquivo = resultado?.files.single;
-    if (arquivo == null || arquivo.bytes == null) return;
     if (arquivo.size > 5 * 1024 * 1024) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -128,7 +134,7 @@ class _ChatPageState extends State<ChatPage> {
       );
       return;
     }
-    final extensao = (arquivo.extension ?? 'jpg').toLowerCase();
+    final extensao = arquivo.extension.toLowerCase();
     final mime = extensao == 'png'
         ? 'image/png'
         : extensao == 'webp'
@@ -138,7 +144,7 @@ class _ChatPageState extends State<ChatPage> {
     setState(() => _enviando = true);
     try {
       final fileId = await _api.uploadFile(
-        bytes: arquivo.bytes!,
+        bytes: arquivo.bytes,
         filename: arquivo.name,
         mimeType: mime,
       );
