@@ -1,0 +1,21 @@
+# Blueprint do Render: publica a API do Amparo a partir do repositório.
+# No painel do Render: New + > Blueprint > escolher este repositório.
+services:
+  - type: web
+    name: amparo-api
+    runtime: python
+    plan: free
+    rootDir: amparo-backend-novo
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      - key: DATABASE_URL
+        sync: false   # colar a URL do Neon no painel
+      - key: SECRET_KEY
+        sync: false   # gerar chave NOVA (não reutilizar a do desenvolvimento)
+      - key: FIELD_ENCRYPTION_KEY
+        sync: false   # gerar chave NOVA (banco da nuvem começa vazio)
+      - key: ALLOWED_ORIGINS
+        sync: false   # ex.: https://amparo.netlify.app
