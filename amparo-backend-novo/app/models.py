@@ -199,6 +199,8 @@ class BlogArticle(Base):
     content = Column(Text, nullable=False)
     category = Column(String, nullable=True)
     published = Column(Boolean, default=False)
+    # Imagem de capa opcional (StoredFile enviado pelo admin)
+    image_file_id = Column(UUID(as_uuid=False), ForeignKey("stored_files.id", use_alter=True, name="fk_blog_image"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

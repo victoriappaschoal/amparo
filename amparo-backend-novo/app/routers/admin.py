@@ -26,7 +26,11 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.deps import get_current_admin
-from app.models import PatientProfile, DoctorProfile, User, _LINK_CODE_ALFABETO
+from app.models import (
+    PatientProfile, DoctorProfile, User, _LINK_CODE_ALFABETO,
+    Message, Consultation, MoodEntry, SymptomDiaryEntry, EPDSResponse,
+    AvailabilityWindow, StoredFile,
+)
 from app.schemas import (
     DoctorAssignRequest, AdminPatientListItem, DoctorProfileOut, PatientProfileOut,
     AdminResetCodeOut,
@@ -153,4 +157,56 @@ def gerar_codigo_redefinicao(username: str, db: Session = Depends(get_db)):
     db.commit()
 
     return AdminResetCodeOut(code=codigo, expires_at=user.reset_code_expires_at)
+
+def _apagar_arquivos_do_usuario(user: User, db: Session) -> None:
+    """Remove a foto de perfil e os arquivos enviados pelo usuário."""
+    user.profile_photo_id = None
+    db.flush()
+    db.query(StoredFile).filter(StoredFile.owner_user_id == user.id).delete()
+
+
+@router.delete("/patients/{patient_id}", status_code=status.HTTP_204_NO_CONTENT)
+def excluir_paciente(patient_id: str, db: Session = Depends(get_db)):
+    """
+    Exclui a paciente e TODOS os seus dados (registros, consultas, mensagens
+    e arquivos). Ação irreversível — o aplicativo pede confirmação dupla.
+    """
+    patient = db.query(PatientProfile).filter(PatientProfile.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Paciente não encontrado")
+
+    user = patient.user
+    db.query(Message).filter(Message.patient_id == patient.id).delete()
+    db.query(Consultation).filter(Consultation.patient_id == patient.id).delete()
+    db.query(MoodEntry).filter(MoodEntry.patient_id == patient.id).delete()
+    db.query(SymptomDiaryEntry).filter(SymptomDiaryEntry.patient_id == patient.id).delete()
+    db.query(EPDSResponse).filter(EPDSResponse.patient_id == patient.id).delete()
+    _apagar_arquivos_do_usuario(user, db)
+    db.delete(patient)
+    db.delete(user)
+    db.commit()
+
+
+@router.delete("/professionals/{doctor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def excluir_profissional(doctor_id: str, db: Session = Depends(get_db)):
+    """
+    Exclui o profissional. As pacientes vinculadas são DESVINCULADAS
+    (não são excluídas) e podem ser vinculadas a outro profissional.
+    Mensagens e consultas dele são removidas.
+    """
+    doctor = db.query(DoctorProfile).filter(DoctorProfile.id == doctor_id).first()
+    if not doctor:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Profissional não encontrado")
+
+    user = doctor.user
+    db.query(PatientProfile).filter(PatientProfile.doctor_id == doctor.id).update(
+        {PatientProfile.doctor_id: None}
+    )
+    db.query(Message).filter(Message.doctor_id == doctor.id).delete()
+    db.query(Consultation).filter(Consultation.doctor_id == doctor.id).delete()
+    db.query(AvailabilityWindow).filter(AvailabilityWindow.doctor_id == doctor.id).delete()
+    _apagar_arquivos_do_usuario(user, db)
+    db.delete(doctor)
+    db.delete(user)
+    db.commit()
 

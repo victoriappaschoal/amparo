@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import (
-    StoredFile, User, Message, PatientProfile, DoctorProfile,
+    StoredFile, User, Message, PatientProfile, DoctorProfile, BlogArticle,
 )
 from app.schemas import StoredFileOut, ProfilePhotoSet
 
@@ -64,6 +64,13 @@ def _pode_baixar(arquivo: StoredFile, user: User, db: Session) -> bool:
         db.query(User).filter(User.profile_photo_id == arquivo.id).first()
     )
     if dono_como_foto is not None:
+        return True
+
+    # Imagem de artigo do blog -> visível a autenticados
+    artigo = (
+        db.query(BlogArticle).filter(BlogArticle.image_file_id == arquivo.id).first()
+    )
+    if artigo is not None:
         return True
 
     # Anexo de mensagem -> só participantes da conversa

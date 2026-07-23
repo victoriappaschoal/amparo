@@ -292,6 +292,7 @@ class BlogArticleOut(BaseModel):
     title: str
     content: str
     category: Optional[str]
+    image_file_id: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -303,6 +304,7 @@ class BlogArticleCreate(BaseModel):
     content: str
     category: Optional[str] = None
     published: bool = True
+    image_file_id: Optional[str] = None
 
 
 # ---------- Chat ----------
@@ -382,3 +384,4 @@ class BlogArticleUpdate(BaseModel):
     content: Optional[str] = None
     category: Optional[str] = None
     published: Optional[bool] = None
+    image_file_id: Optional[str] = None
